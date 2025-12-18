@@ -83,10 +83,8 @@ st.markdown(
         line-height:1.7;
     ">
         <b>Students:</b><br>
-        - Nguyen Van A (nguyenvana@email.com)<br>
-        - Tran Thi B (tranthib@email.com)<br>
-        - Le Van C (levanc@email.com)<br>
-        - Pham Thi D (phamthid@email.com)
+        - Bui Duc Nguyen-235053154-nguyenbd23@uef.edu.vn
+        - Huynh Ngoc Minh Quan-235052863-quanhnm@uef.edu.vn
     </div>
     """,
     unsafe_allow_html=True
