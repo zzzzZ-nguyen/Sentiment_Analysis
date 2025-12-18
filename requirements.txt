@@ -1,0 +1,6 @@
+python-docx
+streamlit
+pandas
+scikit-learn
+python-docx
+
