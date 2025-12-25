@@ -5,10 +5,7 @@ import streamlit as st
 # ==========================
 st.set_page_config(
     page_title="Topic 5 – Sentiment Analysis for E-Commerce",
-    icon = Image.open("panda.png")
-    st.set_page_config(
-    page_icon=icon,
-)
+    page_icon="https://tse4.mm.bing.net/th/id/OIP.ftwMemyVfX2__Kg4dh99wwHaJ3?w=640&h=852&rs=1&pid=ImgDetMain&o=7&rm=3",
     layout="wide"
 )
 
