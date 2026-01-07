@@ -12,7 +12,7 @@ except ImportError:
     HAS_TORCH = False
 
 # ==========================================
-# 1. ĐỊNH NGHĨA LẠI MODEL (Bắt buộc phải giống lúc Train)
+# 1. ĐỊNH NGHĨA LẠI MODEL (Bắt buộc phải khớp với file Train)
 # ==========================================
 if HAS_TORCH:
     class SentimentLSTM(nn.Module):
@@ -42,126 +42,139 @@ if HAS_TORCH:
                       weight.new(n_layers, batch_size, hidden_dim).zero_().to(device))
             return hidden
     
-    # Cấu hình Hyperparameters (Phải khớp với file train)
+    # Cấu hình Hyperparameters (Lấy từ file train_pytorch.py)
     EMBEDDING_DIM = 400
-    HIDDEN_DIM = 256 # Hoặc 128 tùy bạn chỉnh lúc train
+    HIDDEN_DIM = 256 
     N_LAYERS = 2
 
 # ==========================================
 # 2. HÀM XỬ LÝ TEXT & LOAD MODEL
 # ==========================================
-def load_resources():
-    # Load Vocab
-    vocab_path = "models/vocab.pkl" # Đảm bảo bạn đã lưu file này lúc train
-    model_path = "models/sentiment_model.pth" # Đảm bảo file này tồn tại
+@st.cache_resource
+def load_pytorch_model():
+    # Đường dẫn file model và vocab
+    vocab_path = "models/vocab.pkl"
+    model_path = "models/sentiment_model.pth"
     
     vocab = None
     model = None
     
+    # 1. Load Vocab
     if os.path.exists(vocab_path):
         with open(vocab_path, 'rb') as f:
             vocab = pickle.load(f)
-            
+    
+    # 2. Load Model Architecture & State
     if HAS_TORCH and os.path.exists(model_path) and vocab:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         vocab_size = len(vocab) + 1
+        
+        # Khởi tạo kiến trúc model
         model = SentimentLSTM(vocab_size, EMBEDDING_DIM, HIDDEN_DIM, 1, N_LAYERS)
-        # Load state dict
+        
         try:
+            # Load trọng số đã train
             model.load_state_dict(torch.load(model_path, map_location=device))
             model.to(device)
-            model.eval()
-        except:
-            model = None # Lỗi sai cấu trúc model
+            model.eval() # Chế độ dự đoán (không train)
+        except Exception as e:
+            print(f"Lỗi load model: {e}")
+            model = None 
             
     return vocab, model
 
 def predict_sentiment(text, vocab, model):
     if not vocab or not model:
-        return None, 0.0
+        return 0.5 # Giá trị mặc định nếu lỗi
 
-    # Tokenize
+    # Tokenize (Chuyển chữ thành số dựa trên vocab)
     words = text.split()
     review_int = []
     for word in words:
         review_int.append(vocab.get(word, 0)) # 0 là padding/unknown
     
-    # Pad/Truncate về 50
+    # Padding / Truncating về độ dài 50
     seq_len = 50
     if len(review_int) < seq_len:
         features = list(np.zeros(seq_len - len(review_int), dtype=int)) + review_int
     else:
         features = review_int[:seq_len]
     
-    # Convert to Tensor
+    # Chạy qua Model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     feature_tensor = torch.tensor([features], dtype=torch.long).to(device)
     h = model.init_hidden(1, device)
     
-    # Predict
     with torch.no_grad():
         output, _ = model(feature_tensor, h)
-        pred = output.item()
+        pred = output.item() # Trả về xác suất (0.0 -> 1.0)
     
-    return pred # Trả về giá trị 0.0 -> 1.0
+    return pred
 
 # ==========================================
-# 3. GIAO DIỆN CHÍNH (Hàm show)
+# 3. GIAO DIỆN CHÍNH (Hàm Show)
 # ==========================================
 def show():
-    # KHÔNG DÙNG st.set_page_config()
-    
-    st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
-    st.title("🧠 Phân Tích Cảm Xúc (Deep Learning)")
-    st.write("Sử dụng mô hình LSTM đã huấn luyện để dự đoán bình luận mới.")
+    # --- CSS STYLING (Giống code mẫu của bạn) ---
+    st.markdown("""
+    <style>
+    div.stButton > button {
+        background-color: #2b6f3e; color: white; border-radius: 5px; width: 100%;
+        font-weight: bold;
+    }
+    .stTextArea textarea {
+        background-color: #ffffff;
+        color: #333;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<h2 style='color:#2b6f3e;'>🧠 Deep Learning Sentiment Analysis</h2>", unsafe_allow_html=True)
+    st.write("Sử dụng mô hình LSTM (PyTorch) đã được huấn luyện từ dữ liệu của bạn.")
 
     if not HAS_TORCH:
-        st.error("Chưa cài đặt PyTorch.")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.error("⚠️ Thư viện `torch` chưa được cài đặt.")
         return
 
     # Load Model
-    vocab, model = load_resources()
+    vocab, model = load_pytorch_model()
 
+    if model is None:
+        st.error("⚠️ Không tìm thấy Model! Vui lòng vào trang **Train PyTorch** và bấm 'Bắt đầu Huấn luyện' trước.")
+        st.stop()
+
+    # Chia cột giao diện
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        st.subheader("Nhập bình luận:")
-        user_input = st.text_area("Nội dung đánh giá:", height=150, placeholder="Ví dụ: Sản phẩm dùng rất tốt, giao hàng nhanh...")
+        st.markdown("### 📝 Input Review")
+        user_input = st.text_area("Nhập nội dung đánh giá (Review):", height=150, placeholder="Ví dụ: Sản phẩm này dùng rất tốt, pin trâu...")
         
-        btn_predict = st.button("🚀 Phân Tích Ngay", type="primary")
-        
-        if btn_predict:
-            if not user_input.strip():
-                st.warning("Vui lòng nhập nội dung!")
-            elif model is None:
-                st.error("⚠️ Chưa tìm thấy Model! Vui lòng vào trang 'Train PyTorch' để huấn luyện trước.")
-            else:
+        if st.button("🚀 Analyze Sentiment"):
+            if user_input.strip():
+                # Dự đoán
                 with st.spinner("Đang phân tích..."):
                     score = predict_sentiment(user_input, vocab, model)
-                    
-                    st.divider()
-                    st.markdown("### Kết quả dự đoán:")
-                    
-                    # Logic hiển thị: < 0.4 là Negative, > 0.6 là Positive, ở giữa là Neutral
-                    if score >= 0.6:
-                        st.success(f"Dự đoán: **TÍCH CỰC (Positive)**")
-                        st.metric("Độ tin cậy", f"{score:.2%}")
-                    elif score <= 0.4:
-                        st.error(f"Dự đoán: **TIÊU CỰC (Negative)**")
-                        st.metric("Độ tin cậy", f"{(1-score):.2%}")
-                    else:
-                        st.warning(f"Dự đoán: **TRUNG TÍNH (Neutral)**")
-                        st.metric("Điểm số", f"{score:.2f}")
+                
+                # Hiển thị kết quả
+                st.write("---")
+                st.markdown("### 🎯 Result")
+                
+                # Logic: > 0.6 là Positive, < 0.4 là Negative, còn lại là Neutral
+                if score >= 0.6:
+                    st.success(f"**POSITIVE (Tích cực)**\n\nĐộ tin cậy: {score:.2%}")
+                    st.balloons()
+                elif score <= 0.4:
+                    st.error(f"**NEGATIVE (Tiêu cực)**\n\nĐộ tin cậy: {(1-score):.2%}")
+                else:
+                    st.warning(f"**NEUTRAL (Trung tính)**\n\nĐiểm số: {score:.2f}")
+            else:
+                st.warning("Vui lòng nhập nội dung văn bản.")
 
     with col2:
-        st.info("ℹ️ **Thông tin:**\n\nĐây là mô hình LSTM (Long Short-Term Memory) học trên mức độ từ (Word-level).\n\nKết quả trả về là xác suất (0-1):"
-                "\n- Càng gần 1: Tích cực"
-                "\n- Càng gần 0: Tiêu cực")
-        
-        if model:
-            st.success("✅ Model đã được load thành công!")
-        else:
-            st.error("❌ Chưa có Model (Hãy Train trước)")
+        st.markdown("### ℹ️ Examples")
+        st.info("**Positive:**\n- Sản phẩm dùng rất tốt.\n- Giao hàng nhanh, đóng gói đẹp.")
+        st.error("**Negative:**\n- Hàng kém chất lượng.\n- Mới dùng đã hỏng.")
+        st.warning("**Neutral:**\n- Tạm được.\n- Cũng bình thường.")
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.write("---")
