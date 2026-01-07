@@ -12,13 +12,11 @@ st.set_page_config(
 )
 
 # ==========================
-# 🎨 CSS STYLING (BACKGROUND SỌC, CARD & TABLE)
+# 🎨 CSS STYLING (BACKGROUND SỌC, CARD & WHITE TABLES)
 # ==========================
-# Bảng màu: #A20409 (Đỏ), #E58E61 (Cam), #F0EBD6 (Kem), #BBDEA4 (Xanh nhạt), #9BBA74 (Xanh Olive)
-
 css_style = """
 <style>
-/* 1. Background Sọc Chéo (Striped Gradient) */
+/* 1. Background Sọc Chéo */
 [data-testid="stAppViewContainer"] {
     background-color: #F0EBD6;
     background-image: repeating-linear-gradient(
@@ -31,25 +29,25 @@ css_style = """
     background-attachment: fixed;
 }
 
-/* 2. Làm trong suốt Header để thấy nền */
+/* 2. Header trong suốt */
 [data-testid="stHeader"] {
     background-color: rgba(255,255,255,0.6);
     backdrop-filter: blur(5px);
 }
 
-/* 3. Sidebar Styling */
+/* 3. Sidebar */
 [data-testid="stSidebar"] {
     background-color: #ffffff;
     border-right: 3px solid #E58E61;
 }
 
-/* 4. CSS Class cho Khung Tên (Card Style) */
+/* 4. Khung Card thông tin (Footer) */
 .info-card {
-    background-color: rgba(255, 255, 255, 0.95); /* Nền trắng hơi trong */
-    border-radius: 15px;       /* Bo tròn góc */
+    background-color: rgba(255, 255, 255, 0.95);
+    border-radius: 15px;
     padding: 20px;
     margin-bottom: 20px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.1); /* Đổ bóng 3D */
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
     font-family: sans-serif;
     color: #333;
 }
@@ -59,26 +57,40 @@ css_style = """
     transition: all 0.3s ease;
 }
 
-/* 5. TABLE STYLING (Đồng bộ bảng màu trắng) */
-/* Áp dụng cho st.table (Model Comparison, Training Info...) */
-div[data-testid="stTable"] > table {
-    background-color: #ffffff !important; /* Nền trắng tuyệt đối */
-    color: #333333 !important;           /* Chữ màu đen xám */
-    border-radius: 10px;                 /* Bo góc bảng */
+/* 5. TABLE STYLING (CỐ ĐỊNH MÀU TRẮNG CHO TẤT CẢ CÁC BẢNG) */
+/* Áp dụng cho st.table và st.dataframe */
+
+div[data-testid="stTable"] {
+    background-color: #ffffff !important;
+    border-radius: 10px;
     overflow: hidden;
-    border: 1px solid #ddd;              /* Viền nhẹ */
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
 
-/* Header của bảng (Hàng tiêu đề) */
+div[data-testid="stTable"] table {
+    background-color: #ffffff !important; /* Nền bảng trắng */
+    color: #000000 !important;            /* Chữ đen tuyệt đối */
+    width: 100%;
+}
+
+/* Header của bảng */
 div[data-testid="stTable"] th {
-    background-color: #E58E61 !important; /* Màu Cam đào làm nền header */
-    color: white !important;              /* Chữ trắng */
+    background-color: #E58E61 !important; /* Màu Cam làm nền tiêu đề */
+    color: #ffffff !important;            /* Chữ tiêu đề trắng */
     font-weight: bold;
+    border-bottom: 2px solid #ddd;
 }
 
-/* Dòng chẵn lẻ (Optional: giúp dễ nhìn hơn) */
-div[data-testid="stTable"] tr:nth-child(even) {
-    background-color: #f9f9f9 !important;
+/* Ô dữ liệu */
+div[data-testid="stTable"] td {
+    color: #000000 !important;
+    border-bottom: 1px solid #eee;
+}
+
+/* Loại bỏ index column styling mặc định nếu có */
+tbody th {
+    background-color: #ffffff !important;
+    color: #333 !important;
 }
 
 </style>
@@ -139,6 +151,7 @@ if page == "Home – Giới thiệu đề tài":
         
         st.title("📖 Project Introduction")
         
+        # Phần 1: Problem Overview
         st.markdown("### 1. Problem Overview")
         st.info(
             "The project develops an intelligent sentiment analysis system that automatically classifies product reviews "
@@ -147,24 +160,27 @@ if page == "Home – Giới thiệu đề tài":
 
         col_home1, col_home2 = st.columns(2)
 
+        # Phần 2: Objectives (ĐÃ BỎ DẤU CHẤM ĐẦU DÒNG)
         with col_home1:
             st.markdown("### 2. Objectives")
+            # Sử dụng <br> hoặc xuống dòng trong string nhưng không dùng ký tự bullet (*, -)
             st.markdown("""
-            * ✅ **Analyze customer opinions** from product reviews.
-            * ✅ **Support Vietnamese and English** text.
-            * ✅ **Visualize sentiment distribution** (Charts & Graphs).
-            * ✅ **Provide real-time sentiment prediction** for new inputs.
+            ✅ **Analyze customer opinions** from product reviews.
+            ✅ **Support Vietnamese and English** text.
+            ✅ **Visualize sentiment distribution** (Charts & Graphs).
+            ✅ **Provide real-time sentiment prediction** for new inputs.
             """)
 
+        # Phần 3: Technologies (ĐÃ BỎ DẤU CHẤM ĐẦU DÒNG)
         with col_home2:
             st.markdown("### 3. Technologies")
             st.markdown("""
-            * **Core:** 🐍 Python, 🔴 Streamlit
-            * **Processing:** Scikit-learn, TF-IDF
-            * **Models:**
-                * 🔹 Logistic Regression
-                * 🔹 SVM (Support Vector Machine)
-                * 🔹 XGBoost (Optional)
+            **Core:** 🐍 Python, 🔴 Streamlit
+            **Processing:** Scikit-learn, TF-IDF
+            **Models:**
+            🔹 Logistic Regression
+            🔹 SVM (Support Vector Machine)
+            🔹 XGBoost (Optional)
             """)
             
         st.image("https://miro.medium.com/v2/resize:fit:1400/1*p3_wO5j2h7jQ6bC-uP4u2A.png", caption="Sentiment Analysis Workflow Illustration", use_column_width=True)
@@ -212,14 +228,14 @@ elif page == "Model Comparison – So sánh mô hình":
         }
         df = pd.DataFrame(data)
         
-        # Hiển thị bảng (CSS phía trên sẽ tự động làm bảng này màu trắng)
+        # Hiển thị bảng (Sẽ có màu trắng do CSS Global ở trên)
         st.table(df)
         
         st.markdown('</div>', unsafe_allow_html=True)
 
 # --- TRANG TRAINING INFO ---
 elif page == "Training Info – Thông tin mô hình":
-    # CSS cũng sẽ tự động áp dụng cho bảng trong file Training_Info.py nếu bạn dùng st.table()
+    # CSS cũng sẽ tự động áp dụng cho bảng trong file Training_Info.py
     try:
         from pages.Training_Info import show
         show()
