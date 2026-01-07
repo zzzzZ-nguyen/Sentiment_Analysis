@@ -145,8 +145,8 @@ if page == "Home – Giới thiệu đề tài":
             st.markdown("""
             * **Core:** 🐍 Python, 🔴 Streamlit
             * **Processing:** Scikit-learn, TF-IDF
-            * **Models:**  Logistic Regression
-                  SVM (Support Vector Machine)
+            * **Models:**  Logistic Regression-
+                  SVM (Support Vector Machine)-
                   XGBoost (Optional)
             """)
             
