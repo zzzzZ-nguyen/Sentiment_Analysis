@@ -12,11 +12,11 @@ st.set_page_config(
 )
 
 # ==========================
-# 🎨 CSS STYLING (BACKGROUND SỌC, CARD & WHITE TABLES)
+# 🎨 CSS STYLING
 # ==========================
 css_style = """
 <style>
-/* 1. Background Sọc Chéo */
+/* 1. Background Sọc Chéo (Giữ nguyên) */
 [data-testid="stAppViewContainer"] {
     background-color: #F0EBD6;
     background-image: repeating-linear-gradient(
@@ -41,56 +41,28 @@ css_style = """
     border-right: 3px solid #E58E61;
 }
 
-/* 4. Khung Card thông tin (Footer) */
-.info-card {
-    background-color: rgba(255, 255, 255, 0.95);
-    border-radius: 15px;
-    padding: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-    font-family: sans-serif;
-    color: #333;
-}
-.info-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 15px rgba(0,0,0,0.15);
-    transition: all 0.3s ease;
-}
-
-/* 5. TABLE STYLING (CỐ ĐỊNH MÀU TRẮNG CHO TẤT CẢ CÁC BẢNG) */
-/* Áp dụng cho st.table và st.dataframe */
-
-div[data-testid="stTable"] {
+/* 4. TABLE STYLING (CHỈ CÁC BẢNG LÀ MÀU TRẮNG) */
+div[data-testid="stTable"], div[data-testid="stDataFrame"] {
     background-color: #ffffff !important;
     border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    padding: 10px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
 
-div[data-testid="stTable"] table {
-    background-color: #ffffff !important; /* Nền bảng trắng */
-    color: #000000 !important;            /* Chữ đen tuyệt đối */
-    width: 100%;
+div[data-testid="stTable"] table, div[data-testid="stDataFrame"] table {
+    background-color: #ffffff !important; 
+    color: #000000 !important;           
 }
 
 /* Header của bảng */
-div[data-testid="stTable"] th {
-    background-color: #E58E61 !important; /* Màu Cam làm nền tiêu đề */
-    color: #ffffff !important;            /* Chữ tiêu đề trắng */
-    font-weight: bold;
-    border-bottom: 2px solid #ddd;
+div[data-testid="stTable"] th, div[data-testid="stDataFrame"] th {
+    background-color: #E58E61 !important; 
+    color: #ffffff !important;           
 }
 
-/* Ô dữ liệu */
-div[data-testid="stTable"] td {
+/* Dữ liệu trong bảng */
+div[data-testid="stTable"] td, div[data-testid="stDataFrame"] td {
     color: #000000 !important;
-    border-bottom: 1px solid #eee;
-}
-
-/* Loại bỏ index column styling mặc định nếu có */
-tbody th {
-    background-color: #ffffff !important;
-    color: #333 !important;
 }
 
 </style>
@@ -147,6 +119,7 @@ page = st.sidebar.radio(
 # --- TRANG HOME ---
 if page == "Home – Giới thiệu đề tài":
     with st.container():
+        # Container màu trắng mờ để nội dung dễ đọc trên nền sọc
         st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
         
         st.title("📖 Project Introduction")
@@ -160,27 +133,26 @@ if page == "Home – Giới thiệu đề tài":
 
         col_home1, col_home2 = st.columns(2)
 
-        # Phần 2: Objectives (ĐÃ BỎ DẤU CHẤM ĐẦU DÒNG)
+        # Phần 2: Objectives (ĐÃ KHÔI PHỤC DẤU CHẤM ĐẦU DÒNG)
         with col_home1:
             st.markdown("### 2. Objectives")
-            # Sử dụng <br> hoặc xuống dòng trong string nhưng không dùng ký tự bullet (*, -)
             st.markdown("""
-            ✅ **Analyze customer opinions** from product reviews.
-            ✅ **Support Vietnamese and English** text.
-            ✅ **Visualize sentiment distribution** (Charts & Graphs).
-            ✅ **Provide real-time sentiment prediction** for new inputs.
+            * ✅ **Analyze customer opinions** from product reviews.
+            * ✅ **Support Vietnamese and English** text.
+            * ✅ **Visualize sentiment distribution** (Charts & Graphs).
+            * ✅ **Provide real-time sentiment prediction** for new inputs.
             """)
 
-        # Phần 3: Technologies (ĐÃ BỎ DẤU CHẤM ĐẦU DÒNG)
+        # Phần 3: Technologies (ĐÃ KHÔI PHỤC DẤU CHẤM ĐẦU DÒNG)
         with col_home2:
             st.markdown("### 3. Technologies")
             st.markdown("""
-            **Core:** 🐍 Python, 🔴 Streamlit
-            **Processing:** Scikit-learn, TF-IDF
-            **Models:**
-            🔹 Logistic Regression
-            🔹 SVM (Support Vector Machine)
-            🔹 XGBoost (Optional)
+            * **Core:** 🐍 Python, 🔴 Streamlit
+            * **Processing:** Scikit-learn, TF-IDF
+            * **Models:**
+                * 🔹 Logistic Regression
+                * 🔹 SVM (Support Vector Machine)
+                * 🔹 XGBoost (Optional)
             """)
             
         st.image("https://miro.medium.com/v2/resize:fit:1400/1*p3_wO5j2h7jQ6bC-uP4u2A.png", caption="Sentiment Analysis Workflow Illustration", use_column_width=True)
@@ -219,7 +191,6 @@ elif page == "Model Comparison – So sánh mô hình":
         st.header("⚖️ Model Comparison")
         st.markdown("So sánh hiệu quả giữa các thuật toán Machine Learning.")
         
-        # Dữ liệu mẫu
         data = {
             "Model": ["Logistic Regression", "Naive Bayes", "SVM", "Random Forest"],
             "Accuracy": ["88%", "85%", "89%", "86%"],
@@ -228,14 +199,13 @@ elif page == "Model Comparison – So sánh mô hình":
         }
         df = pd.DataFrame(data)
         
-        # Hiển thị bảng (Sẽ có màu trắng do CSS Global ở trên)
+        # Bảng này sẽ có màu trắng do CSS
         st.table(df)
         
         st.markdown('</div>', unsafe_allow_html=True)
 
 # --- TRANG TRAINING INFO ---
 elif page == "Training Info – Thông tin mô hình":
-    # CSS cũng sẽ tự động áp dụng cho bảng trong file Training_Info.py
     try:
         from pages.Training_Info import show
         show()
@@ -263,38 +233,58 @@ elif page == "Future Scope – Hướng phát triển":
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================
-# 👣 FOOTER (CARD STYLE)
+# 👣 FOOTER (MÀU CŨ - COLORFUL)
 # ==========================
 st.markdown("---")
 
+# Giữ khung màu Cam/Đỏ và Xanh Olive như yêu cầu
 _, col_footer, _ = st.columns([1, 8, 1])
 
 with col_footer:
-    # -------- STUDENTS BOX --------
+    # -------- STUDENTS BOX (MÀU CAM ĐÀO & ĐỎ THẪM) --------
     st.markdown(
         """
-        <div class="info-card" style="border-left: 10px solid #A20409;">
-            <h4 style="color:#A20409; margin-top:0;">🎓 Students Group</h4>
-            <div style="color:#555;">
-                <b>1. Bui Duc Nguyen</b> - 235053154 - nguyenbd23@uef.edu.vn<br>
-                <b>2. Huynh Ngoc Minh Quan</b> - 235052863 - quanhnm@uef.edu.vn
-            </div>
+        <div style="
+            background:#E58E61; 
+            border:2px solid #A20409; 
+            border-radius:10px;
+            padding:16px 20px;
+            margin-bottom: 14px;
+            font-size:14px;
+            line-height:1.7;
+            color: #F0EBD6; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        ">
+            <h4 style="color:#A20409; margin-top:0; margin-bottom:5px;">🎓 Students Group</h4>
+            <b>1. Bui Duc Nguyen</b> - 235053154 - nguyenbd23@uef.edu.vn<br>
+            <b>2. Huynh Ngoc Minh Quan</b> - 235052863 - quanhnm@uef.edu.vn
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    # -------- INSTRUCTOR BOX --------
+    # -------- INSTRUCTOR BOX (MÀU XANH Ô LIU & XANH BẠC HÀ) --------
     st.markdown(
         """
-        <div class="info-card" style="border-left: 10px solid #9BBA74; display:flex; align-items:center; gap:15px;">
+        <div style="
+            background:#9BBA74; 
+            border:2px solid #BBDEA4; 
+            border-radius:10px;
+            padding:14px 20px;
+            font-size:14px;
+            display:flex;
+            align-items:center;
+            gap:15px;
+            color: #F0EBD6;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        ">
              <div>
-                <h4 style="color:#9BBA74; margin:0;">👨‍🏫 Instructor</h4>
+                <h4 style="color:#F0EBD6; margin:0; text-shadow: 1px 1px 0 #556B2F;">👨‍🏫 Instructor</h4>
             </div>
-            <div style="flex-grow:1; border-left:1px solid #ddd; padding-left:15px;">
+            <div style="flex-grow:1; border-left:1px solid #BBDEA4; padding-left:15px;">
                 <div style="display:flex; align-items:center; gap:8px;">
                      <img src="https://upload.wikimedia.org/wikipedia/commons/0/06/ORCID_iD.svg" width="20">
-                     <span style="font-weight:bold; color:#333;">Bùi Tiến Đức</span>
+                     <span style="font-weight:bold;">Bùi Tiến Đức</span>
                 </div>
             </div>
         </div>
@@ -312,7 +302,7 @@ st.markdown(
         font-size:13px;
         color:#A20409;
         font-weight:bold;
-        background-color: rgba(255,255,255,0.6);
+        background-color: rgba(255,255,255,0.8);
         border-radius: 20px;
         display: inline-block;
         margin-left: auto;
