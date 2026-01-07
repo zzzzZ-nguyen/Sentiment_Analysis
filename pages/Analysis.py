@@ -1,88 +1,70 @@
 import streamlit as st
 import sys
 import os
+import random
 
-# --- CẤU HÌNH TRANG ---
-st.set_page_config(page_title="Analysis PyTorch", page_icon="🧠", layout="wide")
+# Import từ thư mục gốc
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Import cả hàm load model VÀ hàm load data
+from model_utils import load_model_resources, predict, get_data_files, load_dataset
 
-# --- CSS STYLING ---
+st.set_page_config(page_title="Analysis", page_icon="🧠", layout="wide")
+
+# CSS
 st.markdown("""
 <style>
-div.stButton > button {
-    background-color: #2b6f3e; color: white; border-radius: 5px; width: 100%; font-weight: bold;
-}
-.stTextArea textarea { background-color: #f0f2f6; color: #333; }
+div.stButton > button { background-color: #2b6f3e; color: white; border-radius: 5px; width: 100%; font-weight: bold;}
 </style>
 """, unsafe_allow_html=True)
 
-# --- XỬ LÝ IMPORT TỪ THƯ MỤC GỐC ---
-# Lấy đường dẫn thư mục hiện tại (pages/)
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# Lấy đường dẫn thư mục cha (thư mục gốc chứa model_utils.py)
-parent_dir = os.path.dirname(current_dir)
-# Thêm vào sys.path để Python tìm thấy file
-sys.path.append(parent_dir)
-
-try:
-    from model_utils import load_model_resources, predict
-    HAS_UTILS = True
-except ImportError as e:
-    HAS_UTILS = False
-    st.error(f"❌ Lỗi Import: Không tìm thấy file `model_utils.py`. Chi tiết: {e}")
-    st.info("💡 Giải pháp: Hãy tạo file `model_utils.py` ở thư mục gốc (cùng chỗ với app.py).")
-    st.stop() # Dừng chương trình tại đây nếu lỗi
-
-# ==========================================
-# GIAO DIỆN CHÍNH
-# ==========================================
-st.markdown("<h2 style='color:#2b6f3e;'>🧠 Deep Learning Sentiment Analysis</h2>", unsafe_allow_html=True)
-st.write("Phân tích cảm xúc sử dụng mô hình LSTM (PyTorch).")
+st.title("🧠 Deep Learning Sentiment Analysis")
 
 # 1. Load Model
 vocab, model = load_model_resources()
-
 if model is None:
-    st.warning("⚠️ Chưa tìm thấy Model hợp lệ.")
-    st.markdown("""
-    **Nguyên nhân:**
-    1. Bạn chưa chạy huấn luyện ở trang **Train PyTorch**.
-    2. File `models/sentiment_model.pth` hoặc `models/vocab.pkl` bị thiếu.
-    
-    👉 **Khắc phục:** Vui lòng sang trang **Train PyTorch** và bấm nút **Train Model**.
-    """)
+    st.error("⚠️ Chưa có Model. Vui lòng Train trước.")
     st.stop()
 
-# 2. Giao diện Phân tích
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    st.markdown("### 📝 Nhập nội dung")
-    user_input = st.text_area("Review của khách hàng:", height=150, placeholder="Ví dụ: Hàng dùng rất tốt, giao hàng nhanh...")
+    st.markdown("### 📝 Phân tích")
+    
+    # --- TÍNH NĂNG MỚI: LẤY DỮ LIỆU TỪ FILE ---
+    use_sample = st.checkbox("🎲 Lấy câu mẫu từ dữ liệu Training Info")
+    
+    default_text = ""
+    if use_sample:
+        files = get_data_files()
+        if files:
+            # Lấy file đầu tiên hoặc cho user chọn (để đơn giản mình lấy file đầu)
+            df = load_dataset(files[0]) 
+            if df is not None:
+                # Tìm cột chứa chữ (text)
+                text_cols = [c for c in df.columns if df[c].dtype == 'object']
+                if text_cols:
+                    # Lấy ngẫu nhiên 1 dòng
+                    random_row = df.sample(1).iloc[0]
+                    default_text = str(random_row[text_cols[0]]) # Lấy cột text đầu tiên tìm thấy
+                    st.caption(f"Đã lấy từ file `{files[0]}`: {default_text[:50]}...")
+    
+    # Input Area
+    if default_text:
+        user_input = st.text_area("Nội dung:", value=default_text, height=150)
+    else:
+        user_input = st.text_area("Nội dung:", placeholder="Nhập review...", height=150)
     
     if st.button("🚀 Phân tích ngay"):
         if user_input.strip():
-            with st.spinner("Đang tính toán..."):
-                # Gọi hàm dự đoán
-                score = predict(user_input, vocab, model)
+            score = predict(user_input, vocab, model)
             
             st.write("---")
-            st.markdown("### 🎯 Kết quả phân tích")
-            
-            # Hiển thị kết quả với thanh tiến trình
-            st.progress(score)
-            
             if score >= 0.6:
-                st.success(f"**TÍCH CỰC (POSITIVE) 😊**\n\nĐộ tin cậy: {score:.2%}")
-                st.balloons()
+                st.success(f"**TÍCH CỰC** ({score:.2%})")
             elif score <= 0.4:
-                st.error(f"**TIÊU CỰC (NEGATIVE) 😡**\n\nĐộ tin cậy: {(1-score):.2%}")
+                st.error(f"**TIÊU CỰC** ({(1-score):.2%})")
             else:
-                st.warning(f"**TRUNG TÍNH (NEUTRAL) 😐**\n\nĐiểm số: {score:.2f}")
-        else:
-            st.warning("Vui lòng nhập nội dung trước khi bấm nút.")
+                st.warning(f"**TRUNG TÍNH** ({score:.2f})")
 
 with col2:
-    st.markdown("### ℹ️ Ví dụ mẫu")
-    st.info("**Tích cực:**\n- Sản phẩm tuyệt vời.\n- Shop tư vấn nhiệt tình.")
-    st.error("**Tiêu cực:**\n- Hàng lởm, đừng mua.\n- Vừa nhận đã hỏng.")
-    st.warning("**Trung tính:**\n- Dùng cũng tạm.\n- Không có gì đặc sắc.")
+    st.info("💡 **Mẹo:** Tích vào ô 'Lấy câu mẫu' để test nhanh dữ liệu thực tế mà không cần gõ tay.")
