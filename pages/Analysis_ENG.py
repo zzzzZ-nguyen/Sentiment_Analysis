@@ -1,157 +1,133 @@
 import streamlit as st
-import pandas as pd
-import joblib
+import torch
+import torch.nn as nn
+import pickle
 import os
-import matplotlib.pyplot as plt
+import re
 
-# ==================================================
-# 1. CẤU HÌNH TRANG (Bắt buộc đầu tiên)
-# ==================================================
-st.set_page_config(page_title="Analysis (English)", page_icon="🇬🇧", layout="wide")
+# ==========================================
+# 1. CẤU HÌNH TRANG
+# ==========================================
+st.set_page_config(page_title="Deep Learning Analysis", page_icon="🧠", layout="wide")
 
-# ==================================================
-# 2. CSS GIAO DIỆN
-# ==================================================
 st.markdown("""
 <style>
-[data-testid="stAppViewContainer"] {
-    background-color: #F0EBD6;
-    background-image: repeating-linear-gradient(45deg, #F0EBD6, #F0EBD6 20px, #BBDEA4 20px, #BBDEA4 40px);
-}
-div.stButton > button {
-    background-color: #2b6f3e; color: white; width: 100%; border-radius: 5px;
-}
+    div.stButton > button {background-color: #2b6f3e; color: white; width: 100%;}
 </style>
 """, unsafe_allow_html=True)
 
-# ==================================================
-# 3. LOAD MODEL (Kết nối Model thật)
-# ==================================================
+# ==========================================
+# 2. ĐỊNH NGHĨA LẠI MODEL (Phải giống hệt file train)
+# ==========================================
+class LSTMClassifier(nn.Module):
+    def __init__(self, vocab_size, embed_dim, hidden_dim, output_dim):
+        super(LSTMClassifier, self).__init__()
+        self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
+        self.lstm = nn.LSTM(embed_dim, hidden_dim, batch_first=True, bidirectional=True)
+        self.fc = nn.Linear(hidden_dim * 2, output_dim) 
+        self.dropout = nn.Dropout(0.3)
+
+    def forward(self, x):
+        embedded = self.embedding(x)
+        lstm_out, (hidden, cell) = self.lstm(embedded)
+        hidden = torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim=1)
+        out = self.fc(self.dropout(hidden))
+        return out
+
+# ==========================================
+# 3. HÀM LOAD MODEL & XỬ LÝ TEXT
+# ==========================================
 @st.cache_resource
-def load_model_objects():
-    # Tìm file model trong thư mục models/ hoặc ../models/
-    paths = [
-        os.path.join("models", "model_en.pkl"),
-        os.path.join("..", "models", "model_en.pkl")
-    ]
+def load_artifacts():
+    # Load Từ điển (Vocab)
+    vocab_path = "models/vocab.pkl"
+    if not os.path.exists(vocab_path):
+        return None, None
     
-    for p in paths:
-        if os.path.exists(p):
-            try:
-                model = joblib.load(p)
-                vec_path = p.replace("model_en.pkl", "vectorizer_en.pkl")
-                vectorizer = joblib.load(vec_path)
-                return model, vectorizer
-            except:
-                continue
-    return None, None
+    with open(vocab_path, 'rb') as f:
+        vocab = pickle.load(f)
 
-# ==================================================
+    # Load Model (Trọng số)
+    model_path = "models/sentiment_model.pth"
+    if not os.path.exists(model_path):
+        return None, vocab
+        
+    device = torch.device('cpu') # Streamlit Cloud dùng CPU
+    
+    # Khởi tạo lại kiến trúc model
+    model = LSTMClassifier(len(vocab), 100, 128, 3)
+    
+    # Load trọng số đã train vào
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.eval() # Chuyển sang chế độ dự đoán (không học nữa)
+    return model, vocab
+
+def text_to_tensor(text, vocab, max_len=20):
+    # Xử lý text giống hệt lúc train
+    words = text.lower().split()
+    indices = [vocab.get(w, vocab.get('<UNK>', 1)) for w in words]
+    
+    # Padding
+    if len(indices) < max_len:
+        indices += [vocab.get('<PAD>', 0)] * (max_len - len(indices))
+    else:
+        indices = indices[:max_len]
+        
+    return torch.tensor([indices], dtype=torch.long) # Thêm batch dimension [1, seq_len]
+
+# ==========================================
 # 4. GIAO DIỆN CHÍNH
-# ==================================================
-st.markdown("<h2 style='color:#2b6f3e;'>🇬🇧 English Sentiment Analysis</h2>", unsafe_allow_html=True)
-st.write("Analyze product reviews using the trained Logistic Regression model.")
+# ==========================================
+st.title("🧠 Sentiment Analysis (LSTM Model)")
+st.write("Sử dụng mô hình Deep Learning (PyTorch) đã được huấn luyện trước.")
 
-model, vectorizer = load_model_objects()
+# Load model
+try:
+    model, vocab = load_artifacts()
+    if model is None or vocab is None:
+        st.error("⚠️ Không tìm thấy file model hoặc vocab trong thư mục `models/`. Vui lòng chạy `train_pytorch.py` trên máy local trước rồi upload file kết quả lên.")
+        st.stop()
+except Exception as e:
+    st.error(f"Lỗi khi load model: {e}")
+    st.stop()
 
-# Kiểm tra nếu không có model thật thì báo lỗi hoặc dùng Demo tạm
-if not model:
-    st.warning("⚠️ Could not find 'models/model_en.pkl'. Using a temporary demo model instead.")
-    # --- Demo Fallback (Chỉ chạy khi không có file thật) ---
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.linear_model import LogisticRegression
-    texts = ["Good", "Bad", "Ok"]
-    labels = ["positive", "negative", "neutral"]
-    vectorizer = TfidfVectorizer()
-    X_dummy = vectorizer.fit_transform(texts)
-    model = LogisticRegression()
-    model.fit(X_dummy, labels)
-    # -----------------------------------------------------
+col1, col2 = st.columns(2)
 
-# Chia cột: Bên trái nhập liệu đơn, Bên phải upload file
-col1, col2 = st.columns([1, 1])
-
-# --- CỘT 1: NHẬP LIỆU ĐƠN ---
 with col1:
-    st.subheader("📝 Single Review Analysis")
-    review = st.text_area("Enter review text:", height=150, placeholder="E.g., The quality is amazing, fast shipping!")
-
-    if st.button("▶️ Analyze Sentiment"):
-        if review.strip():
-            # Xử lý
-            X = vectorizer.transform([review.lower()])
-            pred = model.predict(X)[0]
-            proba = model.predict_proba(X).max()
-
-            # Hiển thị kết quả đẹp
-            st.divider()
-            if pred == "positive":
-                st.success(f"Prediction: **POSITIVE** (Conf: {proba:.2%})")
-            elif pred == "negative":
-                st.error(f"Prediction: **NEGATIVE** (Conf: {proba:.2%})")
-            else:
-                st.info(f"Prediction: **NEUTRAL** (Conf: {proba:.2%})")
-        else:
-            st.warning("Please enter some text.")
-
-# --- CỘT 2: UPLOAD FILE CSV ---
-with col2:
-    st.subheader("📂 Batch Analysis (CSV)")
-    st.markdown("Upload a CSV file containing a column named **'review'**.")
+    st.subheader("Nhập liệu")
+    user_input = st.text_area("Nhập bình luận:", height=150, placeholder="Sản phẩm dùng rất tốt...")
     
-    uploaded_file = st.file_uploader("Choose CSV file", type=["csv"])
-
-    if uploaded_file:
-        try:
-            df = pd.read_csv(uploaded_file)
+    if st.button("🔍 Phân tích cảm xúc"):
+        if user_input.strip():
+            # Dự đoán
+            tensor_input = text_to_tensor(user_input, vocab)
+            with torch.no_grad():
+                outputs = model(tensor_input)
+                probs = torch.softmax(outputs, dim=1) # Chuyển thành xác suất
+                max_prob, predicted_class = torch.max(probs, 1)
+                
+            prediction = predicted_class.item()
+            confidence = max_prob.item()
             
-            # Kiểm tra cột dữ liệu
-            # Tự động tìm cột review nếu tên không chuẩn (ví dụ: Comment, text, content)
-            target_col = None
-            possible_names = ["review", "text", "content", "comment", "description"]
-            for col in df.columns:
-                if col.lower() in possible_names:
-                    target_col = col
-                    break
+            # Mapping kết quả
+            labels = {0: "Negative (Tiêu cực)", 1: "Neutral (Trung tính)", 2: "Positive (Tích cực)"}
+            result_text = labels[prediction]
             
-            if target_col:
-                # Dự đoán hàng loạt
-                X_batch = vectorizer.transform(df[target_col].astype(str))
-                df["predicted_sentiment"] = model.predict(X_batch)
-                
-                # Hiển thị bảng kết quả (chỉ 5 dòng đầu)
-                st.dataframe(df[[target_col, "predicted_sentiment"]].head(10), use_container_width=True)
-                
-                # Vẽ biểu đồ
-                st.markdown("##### Sentiment Distribution")
-                
-                # Đếm số lượng
-                counts = df["predicted_sentiment"].value_counts()
-                
-                # Vẽ bằng Matplotlib
-                fig, ax = plt.subplots(figsize=(5, 3))
-                colors = {'positive': '#66b3ff', 'negative': '#ff9999', 'neutral': '#99ff99'}
-                # Map màu cho đúng nhãn
-                bar_colors = [colors.get(x, 'gray') for x in counts.index]
-                
-                counts.plot(kind="bar", ax=ax, color=bar_colors, rot=0)
-                plt.ylabel("Count")
-                plt.title("Review Sentiment Stats")
-                st.pyplot(fig)
-                
-                # Nút tải kết quả về
-                csv_result = df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    "📥 Download Results (.csv)",
-                    csv_result,
-                    "sentiment_results.csv",
-                    "text/csv"
-                )
-                
-            else:
-                st.error(f"CSV must contain one of these columns: {possible_names}")
-                
-        except Exception as e:
-            st.error(f"Error processing file: {e}")
+            st.session_state['result'] = (result_text, confidence)
+        else:
+            st.warning("Vui lòng nhập nội dung!")
 
-st.write("---")
+with col2:
+    st.subheader("Kết quả")
+    if 'result' in st.session_state:
+        label, conf = st.session_state['result']
+        
+        if "Positive" in label:
+            st.success(f"Dự đoán: **{label}**")
+        elif "Negative" in label:
+            st.error(f"Dự đoán: **{label}**")
+        else:
+            st.info(f"Dự đoán: **{label}**")
+            
+        st.metric("Độ tin cậy", f"{conf:.2%}")
+        st.progress(conf)
