@@ -16,7 +16,7 @@ st.set_page_config(
 # ==========================
 css_style = """
 <style>
-/* 1. Background Sọc Chéo (Giữ nguyên) */
+/* 1. Background Sọc Chéo */
 [data-testid="stAppViewContainer"] {
     background-color: #F0EBD6;
     background-image: repeating-linear-gradient(
@@ -41,28 +41,38 @@ css_style = """
     border-right: 3px solid #E58E61;
 }
 
-/* 4. TABLE STYLING (CHỈ CÁC BẢNG LÀ MÀU TRẮNG) */
+/* 4. TABLE STYLING (CHỈNH LẠI TOÀN BỘ LÀ MÀU TRẮNG) */
+/* Container bảng */
 div[data-testid="stTable"], div[data-testid="stDataFrame"] {
     background-color: #ffffff !important;
     border-radius: 10px;
     padding: 10px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
 
+/* Nền và chữ trong bảng */
 div[data-testid="stTable"] table, div[data-testid="stDataFrame"] table {
     background-color: #ffffff !important; 
-    color: #000000 !important;           
+    color: #333333 !important;           
 }
 
-/* Header của bảng */
+/* Header của bảng (QUAN TRỌNG: Chuyển từ Cam sang Trắng/Xám nhạt) */
 div[data-testid="stTable"] th, div[data-testid="stDataFrame"] th {
-    background-color: #E58E61 !important; 
-    color: #ffffff !important;           
+    background-color: #f8f9fa !important; /* Màu xám siêu nhạt thay vì màu cam */
+    color: #333333 !important;            /* Chữ màu đen xám */
+    border-bottom: 2px solid #E58E61 !important; /* Chỉ giữ lại đường kẻ dưới màu cam */
+    font-weight: bold;
 }
 
 /* Dữ liệu trong bảng */
 div[data-testid="stTable"] td, div[data-testid="stDataFrame"] td {
-    color: #000000 !important;
+    color: #333333 !important;
+    border-bottom: 1px solid #eee !important;
+}
+
+/* Ẩn index column background nếu có */
+tbody th {
+    background-color: #ffffff !important;
 }
 
 </style>
@@ -119,7 +129,6 @@ page = st.sidebar.radio(
 # --- TRANG HOME ---
 if page == "Home – Giới thiệu đề tài":
     with st.container():
-        # Container màu trắng mờ để nội dung dễ đọc trên nền sọc
         st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
         
         st.title("📖 Project Introduction")
@@ -133,7 +142,7 @@ if page == "Home – Giới thiệu đề tài":
 
         col_home1, col_home2 = st.columns(2)
 
-        # Phần 2: Objectives (ĐÃ KHÔI PHỤC DẤU CHẤM ĐẦU DÒNG)
+        # Phần 2: Objectives (CÓ DẤU CHẤM ĐẦU DÒNG)
         with col_home1:
             st.markdown("### 2. Objectives")
             st.markdown("""
@@ -143,7 +152,7 @@ if page == "Home – Giới thiệu đề tài":
             * ✅ **Provide real-time sentiment prediction** for new inputs.
             """)
 
-        # Phần 3: Technologies (ĐÃ KHÔI PHỤC DẤU CHẤM ĐẦU DÒNG)
+        # Phần 3: Technologies (CÓ DẤU CHẤM ĐẦU DÒNG)
         with col_home2:
             st.markdown("### 3. Technologies")
             st.markdown("""
@@ -199,7 +208,7 @@ elif page == "Model Comparison – So sánh mô hình":
         }
         df = pd.DataFrame(data)
         
-        # Bảng này sẽ có màu trắng do CSS
+        # Bảng này sẽ có header màu trắng/xám nhạt do CSS mới
         st.table(df)
         
         st.markdown('</div>', unsafe_allow_html=True)
@@ -233,59 +242,60 @@ elif page == "Future Scope – Hướng phát triển":
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================
-# 👣 FOOTER (MÀU CŨ - COLORFUL)
+# 👣 FOOTER (ĐÃ CHỈNH SỬA)
 # ==========================
 st.markdown("---")
 
-# Giữ khung màu Cam/Đỏ và Xanh Olive như yêu cầu
 _, col_footer, _ = st.columns([1, 8, 1])
 
 with col_footer:
-    # -------- STUDENTS BOX (MÀU CAM ĐÀO & ĐỎ THẪM) --------
+    # -------- STUDENTS BOX (THIẾT KẾ MỚI ĐẸP HƠN) --------
+    # Nền Gradient Cam -> Cam nhạt, Chữ trắng, Bo góc
     st.markdown(
         """
         <div style="
-            background:#E58E61; 
-            border:2px solid #A20409; 
-            border-radius:10px;
-            padding:16px 20px;
-            margin-bottom: 14px;
-            font-size:14px;
-            line-height:1.7;
-            color: #F0EBD6; 
+            background: linear-gradient(to right, #E58E61, #e39d7a);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            color: white;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         ">
-            <h4 style="color:#A20409; margin-top:0; margin-bottom:5px;">🎓 Students Group</h4>
-            <b>1. Bui Duc Nguyen</b> - 235053154 - nguyenbd23@uef.edu.vn<br>
-            <b>2. Huynh Ngoc Minh Quan</b> - 235052863 - quanhnm@uef.edu.vn
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                <h4 style="color:white; margin:0; text-transform: uppercase; letter-spacing:1px;">🎓 Students Group</h4>
+            </div>
+            <div style="font-size:15px; line-height:1.6;">
+                <b>1. Bui Duc Nguyen</b> - 235053154 - nguyenbd23@uef.edu.vn<br>
+                <b>2. Huynh Ngoc Minh Quan</b> - 235052863 - quanhnm@uef.edu.vn
+            </div>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    # -------- INSTRUCTOR BOX (MÀU XANH Ô LIU & XANH BẠC HÀ) --------
+    # -------- INSTRUCTOR BOX (THÊM LOGO ORCID ID) --------
+    # Nền Xanh Olive, Chữ trắng
     st.markdown(
         """
         <div style="
-            background:#9BBA74; 
-            border:2px solid #BBDEA4; 
-            border-radius:10px;
-            padding:14px 20px;
-            font-size:14px;
-            display:flex;
-            align-items:center;
-            gap:15px;
-            color: #F0EBD6;
+            background: #9BBA74;
+            border-radius: 12px;
+            padding: 15px 20px;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 20px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         ">
-             <div>
-                <h4 style="color:#F0EBD6; margin:0; text-shadow: 1px 1px 0 #556B2F;">👨‍🏫 Instructor</h4>
+             <div style="min-width: 120px;">
+                <h4 style="color:white; margin:0;">👨‍🏫 Instructor</h4>
             </div>
-            <div style="flex-grow:1; border-left:1px solid #BBDEA4; padding-left:15px;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                     <img src="https://upload.wikimedia.org/wikipedia/commons/0/06/ORCID_iD.svg" width="20">
-                     <span style="font-weight:bold;">Bùi Tiến Đức</span>
-                </div>
+            
+            <div style="width: 1px; height: 30px; background-color: rgba(255,255,255,0.5);"></div>
+            
+            <div style="display: flex; align-items: center; gap: 8px;">
+                 <img src="https://orcid.org/sites/default/files/images/orcid_16x16.png" width="20" height="20" style="vertical-align: middle;">
+                 <span style="font-weight:bold; font-size: 16px;">Bùi Tiến Đức</span>
             </div>
         </div>
         """,
