@@ -87,29 +87,45 @@ def load_training_data():
 
 @st.cache_data
 def load_lexicon_data():
-    """Đọc dữ liệu Từ điển (Lexicon)"""
+    """Đọc dữ liệu Từ điển (Lexicon) có xử lý lỗi dòng hỏng"""
     file_path = "data/vietnamese_lexicon.txt"
     if not os.path.exists(file_path): return None
     
     lexicon_data = []
+    
     with open(file_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            parts = line.strip().split()
-            if len(parts) >= 5:
-                # Cấu trúc: POS | ID | PosScore | NegScore | Word#ID | Definition...
-                pos = parts[0]
-                pos_score = float(parts[2])
-                neg_score = float(parts[3])
-                word = parts[4].split('#')[0].replace('_', ' ') # Bỏ #1 và thay _ bằng space
-                definition = " ".join(parts[5:]).strip('"')
+        for line_num, line in enumerate(f):
+            # Bỏ qua dòng trống hoặc comment
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
                 
-                lexicon_data.append({
-                    "Từ vựng": word,
-                    "Loại từ": pos,
-                    "Điểm Tích cực": pos_score,
-                    "Điểm Tiêu cực": neg_score,
-                    "Định nghĩa": definition
-                })
+            parts = line.split()
+            
+            # Cấu trúc mong đợi: [Loại từ, ID, PosScore, NegScore, Word#ID, Definition...]
+            if len(parts) >= 5:
+                try:
+                    # Thêm try-except để nếu dòng nào số liệu sai thì bỏ qua luôn
+                    pos_score = float(parts[2])
+                    neg_score = float(parts[3])
+                    
+                    word = parts[4].split('#')[0].replace('_', ' ') 
+                    definition = " ".join(parts[5:]).strip('"')
+                    
+                    lexicon_data.append({
+                        "Từ vựng": word,
+                        "Loại từ": parts[0],
+                        "Điểm Tích cực": pos_score,
+                        "Điểm Tiêu cực": neg_score,
+                        "Định nghĩa": definition
+                    })
+                except ValueError:
+                    # Nếu dòng này không phải số (ví dụ dòng header), bỏ qua nó
+                    continue
+                    
+    if not lexicon_data:
+        return None
+        
     return pd.DataFrame(lexicon_data)
 
 # ==================================================
@@ -203,3 +219,4 @@ with tab4:
         st.dataframe(df_train, use_container_width=True)
     else:
         st.warning("Không có dữ liệu.")
+
