@@ -12,17 +12,20 @@ st.set_page_config(
 )
 
 # ==========================
-# 🎨 BACKGROUND
+# 🎨 BACKGROUND (SỬ DỤNG 5 MÀU TỪ BẢNG MÀU)
 # ==========================
-# Tạo background gradient nhẹ nhàng (Xanh mint nhạt -> Trắng)
+# Tạo background gradient sử dụng các màu từ bảng màu (Kem nhạt -> Xanh bạc hà)
 page_bg_img = """
 <style>
 [data-testid="stAppViewContainer"] {
-background-image: linear-gradient(to right top, #e8f5e9, #f1f8e9, #ffffff);
+background-image: linear-gradient(to right top, #F0EBD6, #BBDEA4);
 background-size: cover;
 }
 [data-testid="stHeader"] {
 background-color: rgba(0,0,0,0);
+}
+[data-testid="stSidebar"] {
+background-color: #9BBA74; /* Sử dụng màu Xanh ô liu cho Sidebar */
 }
 </style>
 """
@@ -42,11 +45,9 @@ with col1:
 with col2:
     st.markdown(
         """
-        <h2 style="color:#2b6f3e; margin-bottom:0;">
-        Topic 5: Developing a Sentiment Analysis Application for Product Reviews
+        <h2 style="color:#A20409; margin-bottom:0;"> Topic 5: Developing a Sentiment Analysis Application for Product Reviews
         </h2>
-        <h4 style="color:#555; margin-top:4px;">
-        Supporting E-Commerce Business Decision Making (Open-source + Streamlit)
+        <h4 style="color:#E58E61; margin-top:4px;"> Supporting E-Commerce Business Decision Making (Open-source + Streamlit)
         </h4>
         """,
         unsafe_allow_html=True
@@ -179,18 +180,19 @@ elif page == "Future Scope – Hướng phát triển":
 # ==========================
 st.markdown("---")
 
-# -------- STUDENTS BOX --------
+# -------- STUDENTS BOX (MÀU CAM ĐÀO & ĐỎ THẪM) --------
 st.markdown(
     """
     <div style="
-        background:#fffbd6;
-        border:1px solid #f0d878;
+        background:#E58E61; /* Sử dụng màu Cam đào làm nền */
+        border:2px solid #A20409; /* Sử dụng màu Đỏ thẫm làm viền */
         border-radius:10px;
         padding:16px 20px;
         max-width:900px;
         margin: 0 auto 14px auto;
         font-size:14px;
         line-height:1.7;
+        color: #F0EBD6; /* Màu chữ Kem nhạt */
     ">
         <b>Students:</b><br>
         - Bui Duc Nguyen-235053154-nguyenbd23@uef.edu.vn<br>
@@ -200,12 +202,12 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# -------- INSTRUCTOR BOX --------
+# -------- INSTRUCTOR BOX (MÀU XANH Ô LIU & XANH BẠC HÀ) --------
 st.markdown(
     """
     <div style="
-        background:#f8f9fa;
-        border:1px solid #ddd;
+        background:#9BBA74; /* Sử dụng màu Xanh ô liu làm nền */
+        border:2px solid #BBDEA4; /* Sử dụng màu Xanh bạc hà làm viền */
         border-radius:10px;
         padding:14px 20px;
         max-width:900px;
@@ -214,6 +216,7 @@ st.markdown(
         display:flex;
         align-items:center;
         gap:10px;
+        color: #F0EBD6; /* Màu chữ Kem nhạt */
     ">
         <img src="https://upload.wikimedia.org/wikipedia/commons/0/06/ORCID_iD.svg"
              width="22">
@@ -221,8 +224,7 @@ st.markdown(
             <b>Bùi Tiến Đức</b> –
             <a href="https://orcid.org/"
                target="_blank"
-               style="text-decoration:none; color:#1a73e8;">
-            </a>
+               style="text-decoration:none; color:#F0EBD6;"> </a>
         </div>
     </div>
     """,
@@ -236,7 +238,7 @@ st.markdown(
         text-align:center;
         margin-top:10px;
         font-size:13px;
-        color:#666;
+        color:#A20409; /* Màu chữ Đỏ thẫm */
     ">
         © 2025 – Topic 5: Sentiment Analysis for E-Commerce
     </div>
