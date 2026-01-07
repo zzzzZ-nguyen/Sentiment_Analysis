@@ -3,13 +3,28 @@ import torch.nn as nn
 import os
 import pickle
 import numpy as np
-import pandas as pd # Thêm pandas
+import pandas as pd
+import re
 
-# --- 1. CẤU HÌNH MODEL ---
+# --- CẤU HÌNH ---
 EMBEDDING_DIM = 400
 HIDDEN_DIM = 256
 N_LAYERS = 2
 
+# 1. HÀM CHUẨN HÓA VĂN BẢN (QUAN TRỌNG NHẤT)
+def clean_text(text):
+    """Hàm xử lý văn bản dùng chung cho cả Train và Predict"""
+    if not isinstance(text, str):
+        return []
+    # 1. Chuyển về chữ thường
+    text = text.lower()
+    # 2. Loại bỏ ký tự đặc biệt, giữ lại chữ cái và số tiếng Việt
+    text = re.sub(r'[^\w\s]', ' ', text)
+    # 3. Tách từ đơn giản (Split space)
+    words = text.split()
+    return words
+
+# 2. MODEL LSTM
 class SentimentLSTM(nn.Module):
     def __init__(self, vocab_size, embed_dim, hidden_dim, output_dim, n_layers, drop_prob=0.5):
         super(SentimentLSTM, self).__init__()
@@ -41,34 +56,11 @@ class SentimentLSTM(nn.Module):
                   weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().to(device))
         return hidden
 
-# --- 2. HÀM XỬ LÝ DỮ LIỆU (MỚI THÊM) ---
-def get_data_files():
-    """Lấy danh sách file trong thư mục data"""
-    data_path = "data"
-    if not os.path.exists(data_path): return []
-    return [f for f in os.listdir(data_path) if f.endswith(('.csv', '.xlsx', '.xls'))]
-
-def load_dataset(filename):
-    """Đọc file data và trả về DataFrame"""
-    file_path = os.path.join("data", filename)
-    if not os.path.exists(file_path): return None
-    
-    try:
-        if filename.endswith('.csv'):
-            df = pd.read_csv(file_path)
-        else:
-            df = pd.read_excel(file_path)
-        return df
-    except Exception as e:
-        return None
-
-# --- 3. LOAD MODEL & PREDICT ---
+# 3. LOAD RESOURCE
 def load_model_resources():
     vocab_path = "models/vocab.pkl"
     model_path = "models/sentiment_model.pth"
-    
-    vocab = None
-    model = None
+    vocab, model = None, None
     
     if os.path.exists(vocab_path):
         with open(vocab_path, 'rb') as f: vocab = pickle.load(f)
@@ -84,11 +76,17 @@ def load_model_resources():
         except: model = None
     return vocab, model
 
+# 4. PREDICT (CÓ TRẢ VỀ DEBUG INFO)
 def predict(text, vocab, model):
-    if not vocab or not model: return 0.5
-    words = text.lower().replace('.', '').replace(',', '').split()
+    if not vocab or not model: return 0.5, [], []
+    
+    # Dùng hàm clean_text chuẩn
+    words = clean_text(text)
+    
+    # Map sang số
     review_int = [vocab.get(w, 0) for w in words]
     
+    # Padding
     seq_len = 50
     if len(review_int) < seq_len:
         features = list(np.zeros(seq_len - len(review_int), dtype=int)) + review_int
@@ -102,4 +100,17 @@ def predict(text, vocab, model):
     with torch.no_grad():
         output, _ = model(feature_tensor, h)
         pred = output.item()
-    return pred
+        
+    return pred, words, review_int
+
+# 5. DATA UTILS
+def get_data_files():
+    data_path = "data"
+    if not os.path.exists(data_path): return []
+    return [f for f in os.listdir(data_path) if f.endswith(('.csv', '.xlsx', '.xls'))]
+
+def load_dataset(filename):
+    path = os.path.join("data", filename)
+    try:
+        return pd.read_csv(path) if filename.endswith('.csv') else pd.read_excel(path)
+    except: return None
