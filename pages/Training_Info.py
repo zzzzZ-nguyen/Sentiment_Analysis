@@ -1,1239 +1,197 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import joblib
 import os
 import matplotlib.pyplot as plt
-from wordcloud import WordCloud
-from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
-import plotly.express as px
+
+# --- Cấu hình thư viện vẽ hình (Xử lý lỗi nếu thiếu) ---
+try:
+    from wordcloud import WordCloud
+    HAS_WORDCLOUD = True
+except ImportError:
+    HAS_WORDCLOUD = False
+
+try:
+    import plotly.express as px
+    HAS_PLOTLY = True
+except ImportError:
+    HAS_PLOTLY = False
 
 # ==================================================
-# 1. CẤU HÌNH TRANG & CSS
+# 1. CẤU HÌNH GIAO DIỆN
 # ==================================================
-st.set_page_config(page_title="Training Dashboard", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Data & Training Info", page_icon="📊", layout="wide")
 
-# Gam màu Vintage
-COLOR_BG = "#F0EBD6"
-COLOR_PRIMARY = "#2b6f3e"
-COLOR_ACCENT = "#A20409"
-COLOR_TEXT = "#333333"
-
-st.markdown(f"""
+# CSS Vintage Style
+st.markdown("""
 <style>
-    /* Tổng thể */
-    [data-testid="stAppViewContainer"] {{
-        background-color: {COLOR_BG};
-        background-image: repeating-linear-gradient(45deg, {COLOR_BG}, {COLOR_BG} 20px, #E6E2C8 20px, #E6E2C8 40px);
-    }}
-    h1, h2, h3 {{ color: {COLOR_PRIMARY} !important; font-family: 'Segoe UI', sans-serif; }}
-    
-    /* Card Metric đẹp */
-    div[data-testid="stMetric"] {{
+    [data-testid="stAppViewContainer"] {
+        background-color: #F0EBD6;
+        background-image: repeating-linear-gradient(45deg, #F0EBD6 0, #F0EBD6 2px, #E8E4CC 2px, #E8E4CC 4px);
+    }
+    h1, h2, h3 { color: #2b6f3e !important; font-family: 'Segoe UI', sans-serif; }
+    div[data-testid="stMetric"] {
         background-color: white;
         padding: 15px;
-        border-radius: 10px;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
-        border-left: 5px solid {COLOR_PRIMARY};
-    }}
-    
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] {{ gap: 10px; }}
-    .stTabs [data-baseweb="tab"] {{
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: white;
-        border-radius: 5px;
-        color: {COLOR_PRIMARY};
+        border-radius: 8px;
+        border-left: 5px solid #2b6f3e;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
+        font-size: 1.1rem;
         font-weight: bold;
-    }}
-    .stTabs [aria-selected="true"] {{
-        background-color: {COLOR_PRIMARY} !important;
-        color: white !important;
-    }}
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ==================================================
-# 2. HÀM XỬ LÝ DỮ LIỆU
+# 2. HÀM ĐỌC DỮ LIỆU THÔNG MINH
 # ==================================================
-
-# --- Đọc dữ liệu huấn luyện từ file TXT ---
 @st.cache_data
-def load_training_data():
-    files = {
-        "Positive": "train_positive_tokenized.txt",
+def load_all_data():
+    data_dir = "data" # Thư mục chứa file
+    all_data = []
+    
+    # 1. ĐỌC TẬP TRAIN (File txt thường)
+    train_files = {
         "Negative": "train_negative_tokenized.txt",
-        "Neutral": "train_neutral_tokenized.txt"
+        "Neutral": "train_neutral_tokenized.txt",
+        "Positive": "train_positive_tokenized.txt"
     }
     
-    data = []
-    for label, filepath in files.items():
-        if os.path.exists(filepath):
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+    for label, filename in train_files.items():
+        path = os.path.join(data_dir, filename)
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
                 lines = f.readlines()
-                # Lấy mẫu tối đa 1000 dòng mỗi loại để hiển thị cho nhanh
-                sample_lines = lines[:1000] 
-                for line in sample_lines:
+                for line in lines:
                     if line.strip():
-                        data.append({"Content": line.strip(), "Label": label})
+                        all_data.append({
+                            "Content": line.strip(), 
+                            "Label": label, 
+                            "Type": "Train"
+                        })
+
+    # 2. ĐỌC TẬP TEST (File đặc biệt: Dòng chẵn Text, Dòng lẻ Label)
+    test_path = os.path.join(data_dir, "test_tokenized_ANS.txt")
+    if os.path.exists(test_path):
+        with open(test_path, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+            for i in range(0, len(lines) - 1, 2):
+                text = lines[i].strip()
+                label_code = lines[i+1].strip()
+                
+                # Chuyển mã sang tên nhãn
+                if label_code == 'NEG': label = "Negative"
+                elif label_code == 'POS': label = "Positive"
+                elif label_code == 'NEU': label = "Neutral"
+                else: label = "Neutral"
+                
+                if text:
+                    all_data.append({
+                        "Content": text, 
+                        "Label": label, 
+                        "Type": "Test"
+                    })
     
-    if not data: # Nếu không tìm thấy file, tạo dữ liệu giả
-        return pd.DataFrame([
-            {"Content": "Sản phẩm tốt", "Label": "Positive"},
-            {"Content": "Tệ quá", "Label": "Negative"},
-            {"Content": "Bình thường", "Label": "Neutral"}
-        ])
-        
-    return pd.DataFrame(data)
+    # Nếu chưa có thư mục data hoặc không đọc được gì
+    if not all_data:
+        return pd.DataFrame(), False
 
-# --- SentiWordNet Parser (Dữ liệu từ điển) ---
-RAW_SENTI_DATA = """
-# POS	ID	PosScore	NegScore	SynsetTerms	Gloss
-a	00166146	0.875	0	hấp_dẫn#1	thích nhìn, say mê vẻ đẹp; "quần áo hấp dẫn"; "mô tả quyển sách vở hình minh họa hấp dấn"
-a	00362467	0.75	0	vui_vẻ#1	một tinh thần tốt, thể hiện tâm trạng rất vui ; "tính vui vẻ của cô ấy"; "một lời chào vui vẻ"; "một căn phòng vui vẻ"
-a	00015589	0.125	0.375	dài#9	có hoặc đang được nhiều hơn mức bình thường hoặc cần thiết; "cái quần dài"
-a	00015854	0	0.25	phong_phú#1	có một số lượng lớn; "tê giác đã từng phong phú ở đây"
-a	00016247	0.125	0.5	thừa_thãi#1	có rất nhiều; "nước thừa thãi"
-a	00016756	0	0.25	khan_hiếm#1	thiếu số lượng so với yêu cầu; "rau xanh khan hiếm trong thời điểm hạn hán"
-a	00017782	0.625	0	chấp_nhận#1	đồng ý nhận (điều người khác yêu cầu hoặc đề ra) ; "mức bức xạ chấp nhận được"
-a	00021766	0.5	0	chính_xác#1	phù hợp hoặc gần đúng với thực tế hoặc một tiêu chuần..; "số đo chính xác"; "một quy mô chính xác"
-a	00167278	0.5	0	dễ_thương#1	gây được tình cảm mến thương ở người khác ; "một con bé dễ thương"
-a	00035779	0.25	0.125	nhanh#3	có tốc độ, nhịp độ trên mức bình thường; "xe chạy nhanh"
-a	00049016	0.5	0	hoàn_chỉnh#1	có đầy đủ tất cả các bộ phận cấu thành cần thiết; "một bộ máy hoàn chỉnh"
-a	00050446	0.125	0.625	giản_lược#1	rút gọn hoặc giảm bớt; "trình bày một cách giản lược"
-a	00061262	0.5	0	khéo_tay#1	nhanh, giỏi hoặc chuyên nghiệp khi làm gì đó; "cô ấy khéo tay may vá"
-a	00061664	0.625	0	nguyên_chất#4	chỉ thuần một chất, không có chất khác lẫn vào hoặc không có sự pha chế ; "vàng nguyên chất"
-a	00064479	0.625	0	thuận_lợi#1	điều kiện tốt để làm gì đó; "thời tiết thuận lợi"
-a	00064787	0.625	0	có lợi#1	có phẩm chất, chất lượng cao hơn mức bình thường; "lúa tốt"
-a	00065064	0.75	0	tích_cực#3	có tác dụng khẳng định, thúc đẩy sự phát triển; "cô ấy có suy nghĩ tích cực"
-a	00065488	0	0.75	bất_lợi#1	gây thiệt hại; "đó là vấn đề bất lợi với chúng ta"
-a	00067038	0.625	0	khuyến_khích#1	xứng đáng được đề nghị hoặc đề xuất; "nó được khuyến khích làm việc đó"
-a	00067379	0.75	0	tốt_hơn#3 tốt nhất#2	khôn ngoan hơn hoặc có nhiều thuận lợi hơn; "cái xe này tốt hơn xe kia"
-a	00070939	0.125	0.5	ảnh_hưởng#1	có tác động đến một điều gì đó; "tôi bị ảnh hưởng bởi tiếng ồn"
-a	00071142	0.5	0	ấn_tượng#1	chịu tác động hoặc ảnh hưởng rõ rệt; "tôi ấn tượng với cách trả lời của cô ấy"
-a	00075515	0	0.75	phủ_định#2	bác bỏ sự tồn tại, sự cần thiết của cái gì; "câu phủ định"
-a	00075389	0.5	0	đồng_ý#1	cùng quan điểm hoặc suy nghĩ với ai đó; "anh ấy đồng ý với tôi"
-a	00077645	0	0.5	sợ#1	lo lắng về cái gì đó; "cô ấy rất sợ ma"
-a	00078851	0	0.625	báo_động#1	cảm giác bất ngờ về một sự nguy hiểm nào đó; "tiếng chuông báo động"
-a	00101609	0.75	0	vị_tha#1	sẵn lòng bỏ qua lỗi lầm của người khác; "cô ấy sống rất vị tha"
-a	00102201	0.125	0	mơ_hồ#2	không xác định được vấn đề; "tôi vẫn còn mơ hồ về vấn đề đó"
-a	00106182	0.25	0	hào_phóng#3	rộng rãi trong chi tiêu, trong quan hệ đối xử với mọi người; "hắn rất hào phóng với chúng tôi"
-a	00107017	0.125	0.625	chật_hẹp#1	có phạm vi hẹp,nhỏ; "con ngõ chật hẹp"
-a	01173697	0	0.875	tức_giận#3	cảm giác khó chịu với người nào đó; "cô ta rất tức giận với tôi"
-a	00560586	0.75	0	thích_hợp#1	hợp với yêu cầu và đáp ứng tốt các đòi hỏi; "các điều kiện thích hợp"
-a	00118567	0.375	0	náo_nhiệt#1	nhộn nhịp, sôi nổi trong hoạt động; "đường phố ồn ào, náo nhiệt"
-a	00664879	0.5	0	ngạc_nhiên#1	lấy làm lạ, cảm thấy hoàn toàn bất ngờ với mình; "ai cũng ngạc nhiên trước khả năng của anh ta"
-a	00133417	0.5	0.125	ngon_lành#1	gây được cảm giác thích thú, làm cho ăn hoặc uống không thấy chán hoặc làm việc gì đó dễ dàng, nhanh chóng,không gặp bất cứ khó khăn nào; "bài toán này giải ngon lành"
-a	00149686	0.125	0.5	láu_cá#1	láu và có nhiều mẹo vặt; "thằng bé rất láu cá"
-a	00148642	0.625	0	quý_báu#4	có giá trị, đáng được coi trọng; "lời khuyên quý báu"
-a	00149120	0.625	0	sâu_sắc#15	có tính chất đi vào chiều sâu, vào những vấn đề thuộc bản chất, có ý nghĩa nhất; "một triết lí sâu sắc"
-a	00149861	0.5	0.125	tự_nhiên#2	bình thường như vốn có của bản thân, không có gì là gò bó, giả tạo; "ăn uống tự nhiên"
-a	00150055	0.25	0.5	bất_cẩn#2	vô ý, không cẩn thận; "canh phòng bất cẩn"
-a	00150202	0.5	0.125	rõ_ràng#1	rõ đến mức ai cũng có thể thấy, có thể nhận biết được một cách dễ dàng; "bằng chứng rõ ràng"
-a	00162863	0.375	0.5	nhút_nhát#1	rụt rè, e ngại; "cô bé mới đến rất nhút nhát"
-a	00163315	0.125	0.5	khờ_dại#2	kém trí khôn, tinh ranh; "cô ta hãy còn khờ dại lắm"
-a	00164681	0.125	0.5	lo_lắng#2	ở trong trạng thái rất không yên lòng; "vẻ mặt lo lắng"
-a	00168039	0	0.375	phô_trương#4	chưng ra, bày ra cho người ta thấy, để lấy tiếng, lấy oai; "phô trương lực lượng"
-a	00169692	0.125	0.25	xám_xịt#1	xám và đen lại, trông tối và xấu; "da dẻ xám xịt"
-a	00176150	0.625	0	thịnh_vượng#1	trạng thái phát đạt, đang giàu lên; "làm ăn thịnh vượng"
-a	00182718	0.5	0	thông_minh#7	có năng lực trí tuệ tốt, hiểu nhanh, tiếp thu nhanh; "cậu bé thông minh"
-a	00193480	0	0.625	xấu#4	có hình thức, vẻ ngoài khó coi, gây cảm giác khó chịu, làm cho không muốn nhìn ngắm; "chữ xấu"
-a	00193799	0	0.625	khủng_khiếp#1	hoảng sợ hoặc làm cho hoảng sợ ở mức rất cao; "tai họa khủng khiếp"
-a	00194357	0	0.75	đe_dọa#1	làm ai đấy sợ sệt; "hắn đe dọa tôi"
-a	00196934	0.5	0	yên_lòng#1	có trạng thái tâm lí yên ổn, không có điều gì phải lo lắng; "yên lòng nhắm mắt"
-a	00197247	0.5	0	quả_quyết#1	tỏ ra có đủ quyết tâm, không hề do dự; "thái độ quả quyết"
-a	00220082	0.875	0	xinh_đẹp#1	rất xinh, có được sự hài hòa, trông thích nhìn; "những cô nàng xinh đẹp"
-a	00219705	0.75	0	rực_rỡ#1	có màu sắc tươi sáng đẹp đẽ và nổi bật hẳn lên, làm cho ai cũng phải chú ý; "nắng vàng rực rõ"
-a	01211296	0.5	0	tiến_bộ#4	phát triển theo hướng đi lên, tốt hơn trước; "học hành tiến bộ"
-a	00224166	0	0.75	hiểm_ác#1	chỉ người độc ác, có hành động xấu; "ông ta là con người hiểm ác"
-a	00226891	0.5	0	tốt_bụng#2	có lòng tốt,thương người, sẵn sàng giúp đỡ người khác; "đó là một cô gái tốt bụng"
-a	00229630	0.25	0.75	tệ nhất#1	cái gì đó hình thức rất xấu hoặc chất lượng rất kém; "đấy là món ăn tệ nhất mà tôi từng ăn"
-a	00264776	0	0.5	hèn_nhát#1	kém bản lĩnh, thường do nhút nhát sợ sệt; "một kẻ hèn nhát"
-a	00272172	0	0.25	tái_mét#2	tái đến mức nhợt nhạt như không còn chút máu (thường nói về sắc mặt); "khuôn mặt tái mét"
-a	00273901	0.125	0.5	tối_tăm#1	tối, thiếu ánh sáng; "nhà cửa tối tăm"
-a	00281342	0.25	0	hăng_hái#3	có lòng nhiệt tình và thái độ tích cực trong công việc; "cô ấy rất hăng hái làm việc"
-a	00291181	0	0.375	vững_chắc#5	có khả năng chịu tác động mạnh từ bên ngoài mà vẫn giữ nguyên được trạng thái, tính chất, không bị phá huỷ; "bức tường được xây dựng vững chắc"
-a	00295235	0.5	0.125	nhàn_rỗi#1	rỗi rãi, không phải làm việc gì; "anh ta có nhiều thời gian nhàn rỗi"
-a	00302761	0.375	0	bình_tĩnh#2	không bối rối, mà làm chủ được tình cảm, hành động của mình; "bạn không nên mất bình tĩnh như thế"
-a	00303480	0.5	0.125	ổn_định#4	ở trạng thái yên ổn, không còn có những biến động, thay đổi đáng kể; "giá cả ổn định"
-a	00305590	0	0.75	bẩn_thỉu#12	có nhiều bụi bặm, rác rưởi, cáu ghét hoặc bị hoen ố; "cái giỏ bẩn thỉu"
-a	00251373	0	0.5	bực_dọc#2	bực tức đến mức không chịu được, lộ rõ ở nét mặt, cử chỉ; "cô ta tỏ vẻ bực dọc"
-a	00283703	0	0.5	tối_dạ#2	chậm hiểu, kém về khả năng tiếp thu kiến thức; "con bé có vẻ tối dạ"
-a	00290784	0.125	0.125	lưỡng_lự#2	còn đang suy tính xem nên hay không nên, chưa biết quyết định như thế nào cho đúng; "cô ấy hãy còn lưỡng lự"
-a	00309021	0.5	0	cẩn_thận#1	thận trọng trong hành động hoặc lời nói của mình, tránh sơ suất, để khỏi xảy ra điều bất lợi hoặc không hay; "cẩn thận không ngã"
-a	00343552	0.5	0	cần_thiết#2	cần đến mức không thể nào không làm hoặc không có; "tài liệu cần thiết cho công việc"
-a	00360650	0.625	0.125	trong_sáng#1	trong và không lẫn tạp chất hoặc có phẩm chất đạo đức tốt đẹp, không bị một vết nhơ bẩn nào; "cán bộ cần phải sống trong sạch"
-a	00386392	0.25	0.25	trung_lập#5 không sắc#1	đứng ở giữa hai bên đối lập, không theo hoặc không phụ thuộc vào bên nào; "nước trung lập"
-a	00403385	0.75	0.125	giàu#5	có nhiều hơn mức bình thường; "thức ăn giàu chất đạm"
-a	00421513	0	0.25	đục#1	có nhiều gợn nhỏ vẩn lên làm cho mờ, không trong; "nước đục"
-a	00428404	0.5	0	sáng_sủa#1	rõ ràng, rành mạch, dễ hiểu; "trình bày sáng sủa"
-a	00438567	0	0.75	hà_khắc#1	khe khắt, ác nghiệt; "chính sách cai trị hà khắc"
-a	00439588	0	0.75	ngu_dốt#1	ngu và dốt nát, không hiểu cái gì; "hắn không phải là một tên ngu dốt"
-a	00441523	0.125	0.375	yếu#12	có sức lực kém dưới mức bình thường hoặc có mức độ, năng lực hoặc tác dụng ít, kém so với bình thường; "cơn bão yếu dần"
-a	00452605	0.625	0.125	bí_mật#3	được giữ kín trong phạm vi một số ít người, không để lộ cho người ngoài biết; "hầm bí mật"
-a	00558373	0	0.75	hạn_chế#2	giữ lại, ngăn lại trong một giới hạn nhất định, không thể hoặc không để cho vượt qua; "tầm nhìn còn hạn chế"
-a	00002098	0	0.75	không_thể#1	không có, không đủ khả năng hoặc điều kiện làm việc gì, đối lập với có thể; "không thể nhận được tiền"
-a	00005205	0.5	0	tuyệt_đối#1	hoàn toàn, không có một sự hạn chế hay một trường hợp ngoại lệ nào cả; "tuyệt đối trung thành", "tuyệt đối im lặng", "chân lý tuyệt đối"
-a	00015720	0.125	0.5	lan_tràn#2 thặng_dư#1	quá nhiều
-a	00016647	0.5	0.125	xanh_tươi#1	tươi tốt, đầy sức sống của cây
-a	00017024	0	0.875	hiếm#3	rất ít có, rất ít xảy ra; "hiếm các loại thảo mộc", "hiếm bản vá lỗi của màu xanh lá cây trong sa mạc"
-a	00017186	0.125	0.5	chặt_chẽ#6	không để rời khỏi sự theo dõi, không buông lỏng; "một thị trường chặt chẽ"
-a	00017352	0	0.625	ngược_đãi#1	đối xử tàn tệ, ngược với đạo lí; "một người vợ bị lạm dụng"
-a	00017782	0.625	0	chấp_nhận_được#1	xứng đáng với sự chấp nhận hoặc thỏa đáng; "mức chấp nhận được của bức xạ", "biểu diễn đa dạng từ chấp nhận tuyệt vời"
-a	00024834	0	0.75	không quen_thuộc#1	lạ với lần đầu, không quen với; "không quen thuộc để mặc bộ quần áo"
-a	00031974	0.5	0.125	hoạt_động#5	đặc trưng bởi các hoạt động năng động; "một em bé đang hoạt động", "hoạt động như một con linh dương", "một người đàn ông hoạt động là một người đàn ông của hành động"
-a	00033077	0.5	0	nóng#21	đánh dấu bằng hoạt động kích thích trong một thời gian ngắn, "một tuần nóng trên thị trường chứng khoán"
-a	00035868	0.5	0	nhộn_nhịp#1	không khí đông vui, tấp nập, do có nhiều người qua lại hoặc cùng tham gia hoạt động , "một thành phố nhộn nhịp"
-a	00036998	0	0.5	chậm_chạp#2	có tốc độ, nhịp độ dưới mức bình thường; "một thị trường chậm chạp"
-a	01841295	0	0.75	chậm#1	không phải là đến nay cùng như bình thường trong phát triển; "kinh tế phát triển chậm"
-a	00042837	0	0.5	vô_hiệu#1	không có hiệu lực, không mang lại kết quả; "luật này đã vô hiệu từ tháng 4"
-a	00044608	0	0.625	ẩn#1	khó phát hiện; "mặt trời ẩn trong đám mây"
-a	00061885	0.625	0	khéo_léo#1	hiển thị sáng tạo và kỹ năng; "một tiện ích thông minh", "các cuộc diễn tập xảo quyệt dẫn đến thành công của ông", "một giải pháp tài tình để vấn đề"
-a	00063087	0.5	0	nhanh_nhạy#1	tinh thần nhanh nhẹn và tháo vát; "đầu óc nhanh nhạy"
-a	00069948	0.625	0	nghệ_thuật#2	đáp ứng các tiêu chuẩn thẩm mỹ và sự nhạy cảm; "nghệ thuật tay nghề"
-a	00071142	0.5	0	gây ấn_tượng sâu_sắc#1	hoặc bị ảnh hưởng hoặc chịu ảnh hưởng rõ rệt
-a	00073761	0.125	0.625	căng_thẳng#3	thiếu tự phát, không tự nhiên, "một nụ cười hạn chế", "buộc sự ân cần", "một nụ cười căng thẳng"
-a	00076580	0	0.875	thô_bạo#2	có những hành vi, cử chỉ xúc phạm đến người khác một cách trắng trợn; "họ đã hành động thô bạo sau khi vi phạm thứ ba"
-a	00079069	0.125	0.625	e_ngại#3	trong sợ hãi hoặc sợ hãi của cái ác có thể hoặc gây tổn hại; "e ngại cho cuộc sống của một người", "e sợ nguy hiểm"
-a	00081234	0	0.625	mất bình_tĩnh#1	không giữ được tâm trạng ổn định; "anh ấy bị mất bình tĩnh"
-a	00084795	0	0.5	hung_dữ#1	sẵn sàng gây tai hoạ một cách đáng sợ ; "một bài phát biểu hung dư chống lại chính phủ mới"
-a	00085264	0	0.5	kích_động#1	tác động mạnh đến tinh thần gây ra những xúc động mãnh liệt ; "kích động cha mẹ"
-a	00089051	0.5	0	dễ_chịu#1	phù hợp với ý thích riêng hoặc cảm xúc của bạn hoặc thiên nhiên;" một cách dễ chịu "
-a	00089355	0.125	0.875	khó_chịu#1	không phải theo ý thích của bạn, "một tình huống khó chịu"
-a	00090219	0.333	0.667	khắc_nghiệt#6	mạnh khó chịu, nghiêm ngặt; "các sự kiện khắc nghiệt của sự chậm trễ tòa án"
-a	00094941	0.5	0	hữu_hiệu#2	có khả năng sống hoặc tăng trưởng bình thường và phát triển; " vị thuốc hữu hiệu"
-a	00095280	0	0.75	chết#1	mất khả năng sống, không còn có biểu hiện của sự sống ; "cây đã chết", "con số chết"
-a	00099290	0.5	0	sống#2	ở trạng thái còn sống, chưa chết; "cây vẫn còn sống"
-a	00100373	0	0.75	vô_hồn#4	ở trạng thái đờ đẫn , mất hết sự  sống, "một ánh mắt vô hồn"
-a	00094324	0.125	0.5	không_thể đổi#1 không_thể chuyển_nhượng#1	không có khả năng được chuyển giao;"vị trí này không thể đổi cho người khác được"
-a	00082160	0.625	0.25	không hốt_hoảng#1	không bị ảnh hưởng bởi sợ hãi; "anh ấy không hốt hưởng trước sự cố đó"
-a	00080098	0	0.75	kị#2	không hợp nhau, không thể cùng tồn tại ; "Hai loại thức ăn này kị nhau"
-a	00284400	0.125	0.5	dịu#4 mềm#19	không xuất sắc hoặc rõ ràng; "mặt trăng đổ bóng mềm", "màu pastel mềm"
-a	00285506	0.25	0.625	ghen#2	khó chịu, bực dọc với người được hưởng cái gì đó (thường là về tinh thần, tình cảm) hơn mình, có được cái mình muốn mà không có ; "nhìn với ánh mắt ghen "
-a	00286214	0.5	0	khách_quan#1	có tính chất xuất phát từ thực tế, biểu hiện thực tế một cách trung thực, không thiên lệch;  "một thẩm định khách quan về những ưu và khuyết điểm", "con mắt khách quan của một nhà khoa học"
-a	00286214	0.5	0	vô_tư#2	có tính chất xuất phát từ thực tế, biểu hiện thực tế một cách trung thực, không thiên lệch;  "một con người vô tư"
-a	00299476	0	0.625	hỗn_tạp#4	không thuần nhất, gồm có nhiều thứ rất khác nhau lẫn lộn vào với nhau; "đám đông hỗn tạp có đủ hạng người"
-a	00300359	0	0.5	đinh tai nhức_óc#4	có cảm giác thính giác bị rối loạn, do tác động của âm thanh có cường độ quá mạnh; "tiếng búa đinh tai nhức óc"
-a	00300359	0	0.5	đinh_tai#4	có cảm giác thính giác bị rối loạn, do tác động của âm thanh có cường độ quá mạnh; "tiếng búa đinh tai nhức óc"
-a	00300359	0	0.5	nhức_óc#4	có cảm giác thính giác bị rối loạn, do tác động của âm thanh có cường độ quá mạnh; "tiếng búa đinh tai nhức óc"
-a	00301187	0.5	0	tính được#1	có khả năng được tính toán hoặc ước tính; "một rủi ro tính được", "tính được tỷ lệ cược"
-a	00301777	0.125	0.625	khôn_lường#1	khó có khả năng được tính toán hoặc liệt kê, biết trước được ; "biến hóa khôn lường"
-a	00304144	0.375	0.5	hoang_dã#13	có tính chất tự nhiên của núi rừng, xa đời sống của xã hội loài người ; "động vật hoang dã"
-a	00305590	0	0.75	dơ#12	bẩn ;"chiếc áo bị dơ"
-a	00310943	0.5	0	quá cẩn_thận#1	quá nhiều hoặc quá mức cẩn thận ; "anh ta quá cẩn thận"
-a	00312757	0.125	0.75	liều_lĩnh#2	bất chấp nguy hiểm hoặc hậu quả tai hại có thể xảy ra; "hành động liều lĩnh"
-a	00325281	0.75	0	thận_trọng#1	hiển thị cẩn thận suy tính trước; "anh ta rất thận trọng trong công việc"
-a	00328528	0.5	0	mạch_lạc#3	diễn đạt trôi trảy, mạch lạc , từng đoạn một ;"ăn nói mạch lạc"
-a	00339599	0.625	0	yên_tâm#1	có niềm tin phục hồi, giải thoát khỏi sự lo lắng, "anh cứ yên tâm mà nghỉ ngơi"
-a	00342488	0.5	0	được chứng_nhận#2	có khả năng được bảo lãnh, xác nhận, "một thực tế được chứng nhận"
-a	00344686	0.625	0	điều_chỉnh#2	sửa đổi, sắp xếp lại ít nhiều cho đúng hơn, hợp lí hơn ; "lãi suất điều chỉnh"
-a	00355258	0	0.625	không thay_đổi#1	không thực hiện hoặc trở thành khác nhau; "những nguyên nhân mà họ đã sản xuất vẫn không thay đổi"
-a	00363291	0.625	0	uyển_chuyển#2	có dáng điệu, đường nét mềm mại, gây cảm giác dịu dàng, ưa thích ; "dáng đi uyển chuyển"
-a	00364881	0	0.625	xin_lỗi#4	xin được tha thứ vì có lỗi ; "anh ấy ngỏ lời xin lỗi"
-a	00404110	0.625	0.25	sôi_động#3	ở trạng thái có nhiều biến động không ngừng ; "nhịp sống sôi động"
-a	00408445	0.125	0.5	xanh_xao#3 nhạt#3	thiếu sức sống hoặc lãi suất và hiệu quả; "một màn biểu diễn nhạt của aria", "nhạt văn xuôi với các vị ngọt nhạt của hoa oải hương", "một hiệu suất xanh xao"
-a	00412460	0.625	0	nhân_đạo#3	có tính chất thương yêu, quý trọng và vì con người; "hiến máu nhân đạo"
-a	00417204	0	0.75	nguyên#7	hông được xử lý hoặc bị phân tích; "dữ liệu thô", "chi phí nguyên liệu sản xuất", "chỉ có số liệu thống kê quan trọng thô"
-a	00417413	0.5	0	sạch#1	không có bụi bặm, rác rưởi, cáu ghét, hoặc không bị hoen ố ; "Các con có khuôn mặt sáng sạch", "sạch áo sơ mi trắng", " mèo là động vật sạch "
-a	00418679	0.5	0.125	nguyên_sơ#2	thuộc về lúc ban đầu, lúc mới hình thành, chưa phát triển ; "trao khăn tay màu trắng nguyên sơ của mình"
-a	00419289	0	0.75	dơ_bẩn#1	bẩn thỉu, xấu xa đến mức đáng ghê tởm ; "bộ mặt xấu xa , dơ bẩn"
-a	00421002	0	0.75	thô_tục#2	thiếu lịch sự, thiếu tế nhị đến mức tục tằn ; "cách ăn uống thô tục"
-a	00422374	0	0.625	tệ_hại#2	quá tệ và có tác dụng gây những tổn thất lớn; "một hành động tệ hại"
-a	00422374	0	0.625	tệ#2	quá tệ và có tác dụng gây những tổn thất lớn; "một hành động tệ hại"
-a	00429016	0.5	0	sắc_bén#3	có hiệu lực, có tác dụng tư tưởng mạnh mẽ ; "lập luận sắc bén"
-a	00429355	0.5	0	dễ_hiểu#1	không đòi hỏi phải có nhiều điều kiện hoặc phải cố gắng nhiều mới có được, làm được hay mới đạt được kết quả; "bài giảng dễ hiểu"
-a	00430041	0.5	0.125	sống_động#2	sinh động, có những biểu hiện mạnh mẽ của sự sống ; "tranh vẽ rất sống động"
-a	00434597	0.25	0.5	rắn#10	có khả năng chịu đựng được những tác động bất lợi về tâm lí mà tinh thần, tình cảm không bị ảnh hưởng ; "mặt rắn đanh"
-a	00435492	0	0.75	nhầm_lẫn#5	tinh thần lẫn lộn, không thể suy nghĩ rõ ràng ; "câu trả lời nhầm lẫn"
-a	00437744	0.5	0.125	hiền#3	không dữ, không có những hành động, những tác động gây hại cho người khác, gây cảm giác dễ chịu, không phải ngại, phải sợ khi tiếp xúc; "tính chị ấy rất hiền"
-a	00438063	0	0.625	quá_mức#2	không tha, tàn nhẫn; "một nhà phê bình quá mức"
-a	00438567	0	0.75	xấu_số#1	có số phận không may; "đứa trẻ xấu số"
-a	00439588	0	0.75	ngu_si#1	rất ngu, hầu như chẳng biết gì; "đầu óc ngu si"
-a	00453308	0.75	0	thân_mật#1	đánh dấu bởi người quen thân, hiệp hội, hoặc đã làm quen, "người bạn thân thiết", "thân mật quan hệ giữa kinh tế, chính trị, và các nguyên tắc pháp lý"
-a	00469170	0	0.5	phân_tách#3	phân ra, tách nhau ra thành những đơn vị riêng rẽ; "quá trình phân tách"
-a	00473658	0	0.5	dễ_cháy#1	dễ dàng bắt lửa; "dầu dễ cháy"
-a	00473869	0	0.625	gây cháy#3	có khả năng bắt cháy tự phát hoặc gây hoả hoạn, cháy dễ dàng, "một tác nhân gây cháy", "quả bom gây cháy"
-a	00478685	0	0.625	đau_đớn#4	gây khó chịu về thể chất; " bị rắn cắn ,nó có thể rất đau đớn"
-a	00479330	0.625	0	thoải_mái#2	ở trạng thái hoàn toàn dễ chịu, được hoạt động tự nhiên theo ý muốn, không bị gò bó, hạn chế; "tinh thần thoải mái, vui vẻ"
-a	00481855	0	0.625	không xứng#1	không tương ứng với kích thước hoặc độ hay mức độ, "kết quả không xứng với nỗ lực của mình"
-a	00487653	0.5	0.25	thường#1	không có gì khác lạ, không có gì đặc biệt so với số lớn những cái cùng loại ; "ngày tết cũng  như ngày thường"
-a	00491089	0.625	0	đặc_biệt#3	rõ rệt khác với thông thường, "một sở thích đặc biệt của nhồi và lắp dơi", "một người đàn ông ... cảm thấy đó là một sự xúc phạm đặc biệt được chế giễu với hèn nhát của một người phụ nữ"
-a	00491511	0.5	0	độc_đáo#4	có tính chất riêng của mình, không phỏng theo những gì đã có xưa nay, không giống, không lẫn với những gì có ở người khác; "một ý tưởng độc đáo"
-a	00503876	0	0.5	bở#1	dễ tơi ra, vụn ra khi chịu tác động của lực cơ học ; "đất bở tung"
-a	00507292	0.25	0.625	lãnh_đạm#1	không có biểu hiện tình cảm, tỏ ra không muốn quan tâm đến ; "thái độ lãnh đạm"
-a	00507464	0.5	0	tương_thích#1	có thể tồn tại và thực hiện kết hợp hài hòa hoặc dễ chịu; "một cặp vợ chồng tương thích kết hôn", "những hành động của cô đã tương thích với hệ tư tưởng của mình"
-a	00508480	0.25	0.5	đối_kháng#5	đối lập sâu sắc, một mất một còn, không thể dung hoà được với nhau; "mâu thuẩn đối kháng"
-a	00508592	0.125	0.625	xung_đột#1	va chạm, chống đối nhau do mâu thuẫn gay gắt ; "xung đột lợi ích của khai thác gỗ và các nhà bảo tồn"
-a	00512130	0.75	0	có thẩm_quyền#3	hợp pháp đủ điều kiện hoặc đủ; "một tòa án có thẩm quyền", "có thẩm quyền chứng"
-a	00513799	0	0.75	phàn_nàn#1	nói ra nỗi buồn bực, không vừa ý để mong có sự đồng cảm, đồng tình ; "một ông chủ phàn nàn"
-a	00514396	0.5	0	nén#1	có khả năng bị nén, làm nhỏ gọn hơn, "vật liệu đóng gói nén", "một hộp nén"
-a	00523068	0.75	0	toàn_diện#2	có hoặc hiển thị tất cả các đặc tính cần thiết cho đầy đủ, "một cuộc khủng hoảng  tài chính toàn diện "
-a	00522463	0.875	0	triệt_để#1	thực hiện toàn diện và hoàn toàn; "một cuộc cách mạng toàn diện"
-a	00531087	0.625	0	thản_nhiên#1	có dáng vẻ tự nhiên như thường, coi như không có gì xảy ra ; "nét mặt nó thản nhiên"
-a	00534524	0.125	0.5	khó_hiểu#1	không rõ ràng để hiểu biết ; "bài toán thật khó hiểu"
-a	00539389	0	0.625	đơn_độc#3	chỉ riêng một mình, tách khỏi quan hệ với đồng loại ; "sống đơn độc một mình"
-a	00541823	0	0.5	mật_độ thấp#2	có nồng độ thấp; "mật độ thấp khu vực đô thị"
-a	00543603	0.5	0.375	liên_quan#1	có mối quan hệ nào đó với nhau; "cha mẹ có liên quan của người phạm tội trẻ trung"
-a	00545746	0.125	0.625	thờ_ơ#1	tỏ ra lạnh nhạt, không hề quan tâm, để ý tới, không hề có chút tình cảm gì ; "thờ ơ với thời cuộc"
-a	00551695	0	0.625	tạm_thời#1	không phải cuối cùng hay tuyệt đối; "Nghị định này là tạm thời và không tuyệt đối"
-a	00554302	0	0.5	chia_rẽ bè_phái#1	bất đồng (đặc biệt là ý kiến bất đồng với ý kiến đa số); "trong một lớp mà  chia rẽ bè phái"
-a	00558373	0	0.75	giới_hạn#2	phạm vi, mức độ nhất định, không thể hoặc không được phép vượt qua ; "sức lực con người là có giới hạn"
-a	00560900	0.75	0	hòa_đồng#2	thân thiện,thích nghi với môi trường mới; "anh ta là người là hòa đồng"
-a	00561359	0	0.625	phản_cảm#5	gây ra phản ứng tiêu cực, làm cho cảm thấy bực mình, khó chịu (thường nói về người thưởng thức nghệ thuật); "bức tranh gây phản cảm cho người xem"
-a	00562308	0.625	0	hài_hòa#3	phù hợp với những thứ còn lại; "những bộ quần áo phù hợp được hài hòa với quân đội của mình mang"
-a	00575126	0	0.5	bảo_thủ cực_đoan#1	được đẩy tới mức quá đáng, tới cực độ ; "thái độ cực đoan"
-a	00579084	0.75	0	dễ_thấy#1	rõ ràng bằng mắt hoặc tâm trí, "dễ thấy cái tháp ở một khoảng cách xa"
-a	00579622	0.5	0	nổi_tiếng#2 lớn#5	dễ thấy ở vị trí hay tầm quan trọng; "một nhân vật lớn trong phong trào", "người đàn ông lớn tuổi trong trường", "anh ta rất lớn trong giới tài chính";
-a	00579881	0.5	0	đậm#2	rõ ràng và riêng biệt; "đậm chữ viết tay", "một nhân vật trong cứu trợ khắc đậm", "một thiết kế đậm"
-a	00581401	0.125	0.5	vô_hình#2 không dễ_thấy#1	không nổi bật hoặc không dễ dàng nhận thấy; "ông đẩy chuỗi thông qua một lỗ hổng không dễ thấy", "người đàn ông vô hình"
-a	00582164	0.25	0.75	không_thể nhận_rõ#1	khó hoặc không thể nhận thức, phân biệt, "tăng nhiệt độ không thể nhận rõ̉"
-a	00582314	0.625	0	phân_biệt#1	có khả năng được xem là khác nhau hoặc khác biệt; "một dự án phân biệt thành bốn giai đoạn của tiến bộ", "phân biệt sự khác nhau giữa cặp song sinh "
-a	00586183	0	0.625	phá_hủy#1	gây phá hủy hoặc thiệt hại nhiều, "một chính sách sai có thể phá hoại nền kinh tế"
-a	00587697	0	0.75	tàn_phá#3	phá hoại nặng nề trên một phạm vi rộng ;  "cơn bão tàn phá nhiều nhá cửa"
-a	00589448	0.25	0.5	tự_mãn#1 tự hài_lòng#1	tự lấy làm thoả mãn về những gì mình đã đạt được, mà không cần phải cố gắng hơn nữa; "nó tự mãn với những gì đạt được"
-a	00589624	0.125	0.75	bất_mãn#1	không bằng lòng do không được thoả mãn điều gì đó mà tự nghĩ là mình đáng được hưởng; "thái độ bất mãn"
-a	00597424	0.125	0.5	liên_tục#2	tiếp nối nhau thành một quá trình không bị gián đoạn; "quần áo thay đổi liên tục"
-a	00601032	0	0.625	hung_hăng#1	có dáng vẻ sẵn sàng có những hành động thô bạo chống lại người khác; "điệu bộ hung hăng"
-a	00604617	0.625	0.25	thuận_tiện#1	phù hợp với sự thoải mái hay mục đích của bạn hay nhu cầu; "một lý do thuận tiện cho không"
-a	00605128	0.125	0.75	bất_tiện#1	không phù hợp với sự thoải mái của bạn, mục đích hoặc các nhu cầu ;"thật là bất tiện không có điện thoại trong nhà bếp", "hội trường lại là một nơi bất tiện cho điện thoại"
-a	00605406	0	0.75	vụng#1	không khéo trong hoạt động chân tay, nên kết quả đạt được thường không tốt, không đẹp; "nấu ăn vụng"
-a	00605893	0.5	0	nhận_được#2	chấp nhận rộng rãi như là đúng hay xứng đáng, "tôi vừa  nhận được ý một tưởng độc đáo"
-a	00607421	0	0.625	thông_thường#4	hường có, thường thấy, không có gì lạ hoặc đặc biệt ; "đồ dùng thông thường"
-a	00615191	0.5	0	đáng_tin_cậy#3	xuất hiện để xứng đáng niềm tin hoặc chấp nhận, "một nhân chứng đáng tin cậy"
-a	00623261	0	0.875	hoang_sơ#2	rất hoang dại, như ở thời sơ khai, nguyên thuỷ; "rừng núi hoang sơ"
-a	00621857	0	0.75	bẩn_thỉu dơ_bẩn#2	phi đạo đức hoặc không trung thực ; "một kế hoạch  bẩn thỉu dơ bẩn"
-a	00633084	0.125	0.75	giả_dối#3	dựa trên một khái niệm không chính xác hoặc sai lệch, thông tin; "giả dối hy vọng"
-a	00633235	0.25	0.625	sai_lầm#2	phát sinh lỗi; "một giả định sai lầm", "một quan điểm sai lầm về tình hình"
-a	00633235	0.25	0.625	lầm#2	phát sinh lỗi; "anh bị lầm rồi"
-a	00639842	0.875	0	lịch_sự#2	đặc trưng bởi lịch sự và cách cư xử tốt duyên dáng; "nếu một người đàn ông được duyên dáng và lịch sự với người lạ nó cho thấy ông là một công dân của thế giới"
-a	00640520	0.125	0.5	đột_ngột#4	rất bất ngờ, hoàn toàn không có một dấu hiệu gì báo trước ; "cảm đột ngột"
-a	00641640	0	0.5	bất_lịch_sự#1	không lịch_sự ; "anh ta có thái độ bất lịch sự"
-a	00649586	0.5	0	quan_trọng#3	đặc trưng bởi đánh giá cẩn thận và hành án; "một đọc quan trọng", "một luận án quan trọng", "một phân tích quan trọng của những bài viết của Melville"
-a	00651039	0	0.625	nghiêm_trọng#3	ở trong tình trạng xấu đến mức trầm trọng, có nguy cơ dẫn đến những hậu quả hết sức tai hại; "hậu quả nghiêm trọng"
-a	00652533	0	0.5	không quan_trọng#1	không quan trọng; "bài toán đó không quan trọng"
-a	00670635	0.25	0.75	đáng_ghét#3	xứng đáng là một lời nguyền; "hắn thật đáng ghét"
-a	00670741	0.875	0	may_mắn#1	ở vào tình hình gặp được điều tốt lành; "cô ta thật may mắn"
-a	00670741	0.875	0	may#1	ở vào tình hình gặp được điều tốt lành; "số may"
-a	00679147	0	0.75	hỏng#1	hại hay bị thương hoặc hư hỏng; "Tôi sẽ không mua hàng hoá bị hư hỏng", "cơn bão để lại một thức của các tòa nhà bị hư hỏng nặng"
-a	00685638	0.5	0.125	quyết_định#3	đặc trưng bởi các quyết định và vững chắc; "một khả năng và quyết định người phụ nữ trẻ", "chúng ta cần lãnh đạo quyết định", "cô ấy đã cho anh ta một câu trả lời quyết định"
-a	00688947	0.75	0	đoan_trang#1	đặc trưng bởi đắn, nhân phẩm và hương vị tốt trong cách cư xử và hành; "cô ấy là người đoan trang, dịu dàng"
-a	00689336	0.75	0.125	nghiêm_trang#1	đặc trưng của phẩm giá và đắn ; "nét mặt nghiêm trang"
-a	00622935	0.75	0.25	liêm_khiết#1	có phẩm chất trong sạch, không tham ô, không nhận tiền của hối lộ ;"sống liêm khiết"
-a	00620585	0	0.625	bất_hợp_tác#1	không muốn hợp tác; "một nhân chứng bất hợp tác"
-a	00684163	0	0.625	khiêu_dâm#1	có hành động để kích động để không đoan hoặc ham muốn, "vũ điệu thường trở thành khiêu dâm"
-a	00685924	0.5	0.125	kiên_quyết#2	đặc trưng bởi các nhanh chóng và vững chắc; "ông ta trả lời một cách dứt khoát"
-a	00686573	0	0.625	do_dự#1	thiếu quyết đoán của nhân vật do dự, không thể hành động hoặc quyết định nhanh chóng hay vững; "cô ta có tính do dự"
-a	00687952	0.5	0	khẳng_định#1	tự tin tuyên bố là như vậy; "việc khẳng định giá trị của bức tranh"
-a	00694608	0.5	0	đánh_bại#1	đánh đập, khắc phục, không chiến thắng; "kẻ thù bị đánh bại"
-a	00695024	0.5	0	bất_khả_chiến_bại#1	chiến thắng; "bất khả chiến bại trong trận chiến", "một đội bất khả chiến bại"
-a	00696207	0	0.5	nghịch_ngợm#1	hay nghịch, thích nghịch; "con bé hay nghịch ngợm"
-a	00696335	0	0.75	ngoan_cố#2	khăng khăng không chịu từ bỏ ý nghĩ, hành động sai trái của mình, mặc dù bị phản đối, chống đối mạnh mẽ ; "Đại học bị đình chỉ những người biểu tình ngoan cố nhất"
-a	00696828	0.5	0	tuân_theo#1	xử lý hoặc sẵn sàng để thực hiện; "một người nào đó tuân theo thuyết phục"
-a	00700451	0.75	0	xác_định#1	chính xác, rõ ràng và xác định rõ ràng; "Tôi muốn có một câu trả lời rõ ràng", "một tuyên bố xác định của các điều khoản của sẽ"
-a	00703109	0	0.625	chán_nản#1	bị ảnh hưởng hoặc đánh dấu bằng tinh thần thấp; "cô ấy chán nản nhưng cố gắng để nhìn vui vẻ"
-a	00704609	0.625	0.25	phấn_chấn#1	ở trạng thái hăng hái, hứng khởi do tác động của một sự việc hoặc ý nghĩ tích cực, hợp nguyện vọng ; "người chiến thắng phấn chấn"
-a	00709215	0	0.625	yếu_đuối mỏng_manh#3	tinh tế dễ bị phá vỡ, hư hỏng hoặc bị phá hủy; "cô ấy là người yếu đuối mỏng manh"
-a	00712004	0.5	0.125	dễ_tính#3	có tính dễ dãi, không đòi hỏi nhiều để có thể hài lòng ; "một giáo viên dễ tính"
-a	00713351	0	0.5	tuyệt_vọng#5	hiển thị cực kỳ khẩn cấp hoặc cường độ đặc biệt vì nhu cầu rất lớn hoặc mong muốn, "cảm thấy một thôi thúc tuyệt vọng để thú nhận"
-a	00715140	0.625	0.25	dân_chủ#1	đặc trưng bởi hoặc ủng hộ hoặc dựa trên các nguyên tắc của nền dân chủ hay công bằng xã hội; "chính phủ dân chủ", "một nước dân chủ"
-a	00717417	0	0.625	phi dân_chủ#1	không đồng ý với hoặc theo học thuyết dân chủ hoặc thực hành hay lý tưởng; "các công đoàn đã phá vỡ các thủ tục qua phi dân chủ của mình"
-a	00724397	0.625	0	chắc_chắn#5	đáng tin cậy trong hoạt động hoặc hiệu ứng; "một biện pháp khắc phục nhanh chóng và chắc chắn", "một cách chắc chắn để phân biệt hai", "bụi gỗ là một dấu hiệu chắc chắn của mối"
-a	00726317	0	0.75	bất_lực#3	không thể quản lý độc lập; "bất lực như một em bé"
-a	00732960	0.5	0	mong_muốn#1	giá trị có hoặc tìm kiếm hoặc đạt được; "một công việc mong muốn","một kết quả mong muốn"
-a	00736299	0	0.5	đổ_nát#3	đưa đến hủy hoại; "sau cuộc cách mạng quý tộc đã đổ nát"
-a	00737116	0	0.625	đắm#1	bị phá hủy trong một tai nạn; "một con tàu đắm", "một xa lộ đầy đủ của chiếc xe đắm"
-a	00737432	0.625	0	bảo_tồn#1	bảo vệ khỏi tác hại, mất mát ; "di tích lịch sử cần được bảo tồn"
-a	00738829	0.625	0	phát_hiện#1	có khả năng được xác định chắc chắn hoặc phát hiện ra"; "một đại dương nữa được phát hiện"
-a	00741076	0.625	0	quyết_tâm#2	quyết và cố gắng thực hiện bằng được điều đã định, tuy biết là có nhiều khó khăn, trở ngại; "quyết tâm tăng trưởng"
-a	00745858	0.125	0.75	gian_khổ#3	khó khăn để thực hiện, đòi hỏi nỗ lực đáng kể về tinh thần và kỹ năng; "công việc gian khổ của việc chuẩn bị một từ điển"
-a	00746994	0.75	0.125	nhạy_cảm#2	khó khăn để xử lý; đòi hỏi lớn nguyên vẹn; "một chủ đề nhạy cảm"
-a	00747226	0.125	0.875	trục_trặc#3	thất thường khó khăn trong hoạt động, có thể bị phiền hà; "tên lửa bị nhiều quá trục trặc sẽ được thử nghiệm gần khu vực dân cư dày đặc", "thành phần trục trặc của hệ thống truyền thông"
-a	00748947	0	0.5	cố_gắng#1	bỏ công sức ra nhiều hơn mức bình thường để làm việc g; "giảm khi lần cố gắng"
-a	00749040	0	0.625	bực_bội#2	gây khó khăn trong việc tìm kiếm một câu trả lời hay giải pháp, nhiều tranh chấp; "bực bội vấn đề ưu tiên"
-a	00751525	0.5	0.25	nghiêm#1	có hay thể hiện nhân phẩm, đặc biệt là hình thức hoặc stateliness ở mang hoặc xuất hiện; "thái độ trang nghiêm của mình", "giám đốc của trường đã được một mái tóc trắng trang nghiêm quý ông"
-a	00752847	0	0.625	ngớ_ngẩn#3	cảm hứng khinh thương hại; "một cách trả lời ngớ ngẩn"
-a	00754873	0.25	0.5	cẩu_thả#1	đặc trưng bởi quá đáng, bỏ bê, thiếu quan tâm;"cha mẹ cẩu thả", "cẩu thả của các chi tiết", "cẩu thả trong thư của mình"
-a	00757923	0.625	0	tập_trung#5	dồn sức hoạt động, hướng các hoạt động vào một việc gì ; "tập trung tư tưởng"
-a	00509206	0	0.625	không tương_thích#4	không có khả năng được sử dụng hoặc kết nối với các thiết bị khác hoặc các thành phần mà không sửa đổi; "phần mềm không tương thích với linux"
-a	00513165	0	0.75	không cạnh_tranh#1	tranh đua nhau để giành lấy lợi ích về phía mình, giữa những người, những tổ chức có cùng lĩnh vực hoạt động như nhau ; "không cạnh tranh vị trí", "không cạnh tranh lãi suất trong các trò chơi"
-a	00514717	0	0.625	không nén được#1	không có khả năng bị nén, chịu nén, "đống rác không nén được"
-a	00553899	0	0.625	không cân_đối#1	không đồng ý hoặc sự hòa hợp, "không cân đối quan điểm với những ý tưởng hiện nay"
-a	00759169	0.5	0	lịch_thiệp#2	tỏ ra biết cách giao thiệp, làm vừa lòng người tiếp xúc với mình ; "cách cư xử lịch thiệp"
-a	00760783	0	0.75	xa_lánh#1	gây ra sự thù địch hoặc mất thân thiện; "chị ấy hay xa lánh tôi"
-a	00764301	0	0.5	vô_tội_vạ#2	thẳng thắn trực tiếp và thẳng thắn nhưng, tốt bụng; "làm một cách vô tội vạ"
-a	00764484	0.5	0.125	thẳng#1	không kiêng nể, không che giấu, không úp mở, dám nói lên sự thật hoặc nói đúng những điều mình nghĩ ; "nói thẳng"
-a	00765173	0	0.625	tàn_bạo#4	độc ác và hung bạo ; "cách đối xử tàn bạo chưa từng thấy"
-a	00771373	0.875	0	sành_điệu#1	có hoặc tiết lộ cái nhìn sắc bén và sự phán đoán tốt; "một nhà phê bình sành điệu", "một người đọc sành điệu"
-a	00771803	0.625	0	sáng_suốt#2	có khả năng nhận thức đúng đắn, giúp giải quyết vấn đề một cách tỉnh táo, không sai lầm ; "đầu óc sáng suốt"
-a	00772910	0.625	0	kín_đáo#1	đánh dấu bằng sự khiêm tốn và thận trọng hoặc tự kiềm chế khôn ngoan; "trợ lý tin cậy kín đáo của mình"
-a	00773579	0.625	0	phân_biệt đối_xử#1	đánh dấu bằng khả năng nhìn thấy hoặc làm cho sự phân biệt tiền phạt; "bản án phân biệt đối xử"
-a	00773759	0.125	0.625	bừa_bãi#2	không có trật tự, không kể gì trật tự ; "thói quen đọc bừa bãi", "một hỗn hợp bừa bãi của màu sắc và phong cách"
-a	00774006	0	0.75	lăng_nhăng#1	đủ các thứ bất kì, tuỳ tiện và chẳng có giá trị gì ; "hắn viết lăng nhăng trên giấy"
-a	00774676	0.5	0	đánh_giá cao#2	có hay trân trọng hay một phán quyết thuận lợi quan trọng hoặc ý kiến; "đánh giá cao về một phong cảnh đẹp", "một tiếng cười tán thưởng từ phía khán giả"
-a	00775693	0.625	0	chọn_lọc#1	chăm sóc để chọn, đặc trưng bởi sự lựa chọn cẩn thận; "một đầu đọc đặc biệt nhanh chóng và chọn lọc"
-a	00785889	0.75	0	không rời_rạc#1	không chia, chia thành nhiều phần; "các lớp đã được hợp nhất thành một khối không rời rạc"
-a	00787136	0.125	0.5	độc_đoán#1	dùng quyền của mình mà định đoạt công việc theo ý riêng, bất chấp ý kiến của những người khác ; "quyết định độc đoán"
-a	00788032	0.125	0.5	bắt_nạt#1	cậy quyền thế, sức mạnh mà doạ dẫm làm cho phải sợ ; "bắt nạt trẻ con"
-a	00788821	0.75	0	phục_tùng#1	tuân theo, không làm trái lại ; "công chức phục tùng"
-a	00791131	0.25	0.75	không_phục#1	không làm theo hoặc không phục tùng; "tôi không phục anh"
-a	00792476	0.625	0	sở_hữu#3	có hoặc hiển thị một mong muốn kiểm soát hoặc chi phối; "cha mẹ sở hữu"
-a	00795078	0.5	0.125	khoa_trương#1	có hứng thú và hấp dẫn về cảm xúc của câu chuyện cường điệu; "anh ta có tính khoa trương"
-a	00796591	0.5	0	sặc_sỡ#2	có nhiều màu sắc sáng, chói xen lẫn nhau ; "quần áo sặc sỡ"
-a	00799517	0.625	0	tỉnh_táo#1	ở trạng thái tỉnh, không buồn ngủ, không say, không mê; "người bệnh đã hoàn toàn tỉnh táo"
-a	00804695	0.5	0	sinh_động#1	đầy đủ của cuộc sống và năng lượng; "khu vườn sinh động"
-a	00805566	0.625	0.25	mát_mẻ#1	át, có vẻ như nhẹ nhàng nhưng thật ra là có ý mỉa mai, chê trách, hờn dỗi; "buông lời mát mẻ"
-a	00805810	0.75	0.25	lấp_lánh#3	có ánh sáng phản chiếu không liên tục, nhưng đều đặn, vẻ sinh động ; "mắt sáng lấp lánh"
-a	00810636	0	0.5	lạc_hậu#4	có ít hơn tiến độ bình thường; "một đất nước lạc hậu về kinh tế"
-a	00810916	0.625	0.25	ham#1	có hoặc hiển thị quan tâm hoặc mong muốn mãnh liệt hay thọ thiếu kiên nhẫn; "ham học"
-a	00821959	0.625	0.125	danh_dự#1	cho là một vinh dự mà không có những nhiệm vụ bình thường; "một bằng danh dự"
-a	00822115	0.625	0	dễ_dàng#3	có vẻ dễ, không đòi hỏi nhiều điều kiện, nhiều công phu ; "làm ăn dễ dàng"
-a	00830717	0.25	0.75	ít_học#1	không có một nền giáo dục tốt; "người thiểu số thường ít học"
-a	00834048	0	0.75	không_còn tồn_tại#1	không còn hiệu lực, sử dụng, không hoạt động; "một luật không còn tồn tại", "một tổ chức không còn tồn tại"
-a	00837977	0	0.5	vất_vả#2	ở vào tình trạng phải bỏ ra nhiều sức lực hay tâm trí vào một việc gì trong một thời gian dài; "người nông dân quanh năm vất vả"
-a	00841403	0	0.5	mạnh_mẽ#1	đặc trưng bởi hoặc toàn bộ lực hoặc sức mạnh (thường nhưng không nhất thiết thể chất); "một người mạnh mẽ"
-a	00848074	0.5	0	bắt_buộc#1	về mặt đạo đức hay pháp lý ràng buộc hay bắt buộc; "tại nhà là bắt buộc", "một đóng góp bắt buộc"
-a	00851744	0.5	0	đủ_điều_kiện#1	đủ tiêu chuẩn hoặc cho phép hoặc xứng đáng được chọn; "đủ điều kiện để chạy cho các văn phòng", "hội đủ điều kiện cho phúc lợi hưu trí", "một cử nhân đủ điều kiện"
-a	00852197	0.5	0	xứng_đáng#2 phù_hợp mong_muốn#2	xứng đáng là lựa chọn đặc biệt là khi một người phối ngẫu, "các bậc cha mẹ thấy các cô gái thích hợp cho con trai của họ"
-a	00854255	0.5	0.25	cảm#1	đặc trưng bởi cảm xúc ; "cảm thấy lạnh"
-a	00858558	0.75	0	kiên_nhẫn#1	có khả năng tiếp tục làm việc đã định một cách bền bỉ, không nản lòng, mặc dù thời gian kéo dài, kết quả còn chưa thấy ; "kiên nhẫn chờ đợi"
-a	00864693	0	0.625	thất_nghiệp#1	không tham gia vào một nghề nghiệp nào; "công nhân thất nghiệp đã tuần hành về thủ đô"
-a	00865620	0.75	0	say_mê#1	đầy ngạc nhiên và thích thú; "cô ta thực sự say mê bộ phim"
-a	00866047	0	0.875	thất_vọng#1	mất hết hi vọng, không còn trông mong gì được nữa ; "cô ấy lắc đầu thất vọng"
-a	00866392	0.5	0.375	vỡ_mộng#1	giải thoát khỏi ảo tưởng; "thất bại làm cô ấy vỡ mộng"
-a	00876465	0.25	0.5	lơ_đãng#1	thiếu niềm say mê hoặc sự lanh lẹ; "ông đã lơ đãng và chán"
-a	00883830	0	0.625	tối_giản#1	không có khả năng được thực hiện nhỏ hơn hoặc đơn giản; "một tối thiểu tối giản", "một công thức tối giản"
-a	00884007	0.5	0	giác_ngộ#1	hiểu ra hoặc làm cho hiểu ra lẽ phải trái; "giác ngộ cách mạng"
-a	00885415	0.25	0.625	không gan_dạ#1	 không dám mạo hiểm ; "anh ấy không gan dạ"
-a	00885695	0.625	0	nhiệt_tình#1	có hay thấy hứng thú và quan tâm rất lớn; "đám đông đầy nhiệt tình đường phố", "một phản ứng nhiệt tình"
-a	00888765	0.375	0.5	ganh_tị#1	khó chịu, bực dọc với người được hưởng cái gì đó (thường là về tinh thần, tình cảm) hơn mình, có được cái mình muốn mà không có ; "ghen ăn với em"
-a	00889239	0.75	0	nhớ_nhà#1	khao khát trở về nhà; "tuy xa nhà chưa lâu nhưng cô rất nhớ nhà"
-a	00899612	0.125	0.5	phức_tạp#1	đòi hỏi kiến thức bí mật hay bí ẩn; "các nghiên cứu khoa học phức tạp của Cảm xạ"
-a	00904163	0.75	0	tôn_kính#1	xứng đáng tôn trọng hoặc đối cao ; "các vị thần rất được tôn kính"
-a	00904548	0	0.75	khinh#1	đáng khinh miệt hoặc khinh miệt ; "hành động thật đáng  khinh"
-a	00905181	0.333	0.667	thương_tâm#1 thảm_hại đáng_thương#2	cảm hứng pha trộn sự khinh thường và thương hại; "những nỗ lực của họ đã được thảm hại", "thiếu nhân vật đáng thương"
-a	00905386	0.625	0	đạo_đức#2	phù hợp với tiêu chuẩn được chấp nhận hành vi xã hội hoặc chuyên nghiệp; "một luật sư có đạo đức", "đạo đức hành nghề y", "một vấn đề đạo đức", "đã không phản đối đạo đức để uống"; " Chúng ta là một thế giới của người khổng lồ hạt nhân và trẻ sơ sinh có đạo đức " Omar N. Bradley
-a	00905905	0.5	0	miễn_phí#1	truyền đạt hay giống như một lời khen; "uống trà miễn phí"
-a	00906312	0.5	0.25	ca_ngợi#1	đầy đủ hoặc cho lời khen ngợi; "ca ngợi những người anh hùng đã hi sinh cho dân tộc"
-a	00907032	0	0.75	chê_bai#1	tỏ lời chê; "lên tiếng chê bai"
-a	00912814	0	0.75	loang_lổ#1	không đều hoặc không đồng đều trong kết cấu, chất lượng;  "sương mù loang lổ"
-a	00919984	0.25	0.5	điên#3	sở hữu bởi sự phấn khích quá mức; "đám đông điên"
-a	00923993	0	0.5	khiển_trách#1	phê phán nghiêm khắc khuyết điểm của cấp dưới ; "hắn bị khiển trách vì thiếu tinh thần trách nhiệm"
-a	00925560	0.625	0	cạn_kiệt#1	cạn sạch, đến mức không còn tìm đâu, lấy đâu ra nữa ; "nguyên liệu cạn kiệt"
-a	00925820	0.625	0	tái_tạo#2	có khả năng được gia hạn, thay thế; "năng lượng tái tạo như năng lượng mặt trời là vô tận về mặt lý thuyết"
-a	00932695	0	0.75	tiêu_hao#1	giảm chi tiêu; "tiêu hao năng lượng"
-a	00933154	0.5	0	đắt#1	cao giá hoặc sạc giá cao; "quần áo đắt tiền", "một cửa hàng đắt tiền"
-a	00938659	0.5	0	hợp_lệ#2	vẫn hợp pháp chấp nhận được; "giấy phép còn hợp lệ"
-a	00946499	0.5	0	mở_rộng#1	có thể hoặc có xu hướng mở rộng hoặc đặc trưng bởi sự mở rộng; "mở rộng các vật liệu", "các lực lượng mở rộng của lửa"
-a	00958151	0.5	0	công_bằng#1	công bằng cho tất cả các bên như là quyết định bởi lý trí và lương tâm; "công bằng điều trị của tất cả các công dân", "một phân phối công bằng của các quà tặng trong số các trẻ em"
-a	00958475	0.625	0.25	trung_thực#7	đã đạt được hoặc kiếm được mà không có gian lận hoặc trộm cắp; "một mức lương trung thực", "một đồng xu công bằng"
-a	00958712	0.25	0.625	bất_công#3 không_công_bằng#1	không công bằng; "việc phân chia không công bằng của cải", "không công bằng thuế"
-a	00958880	0.625	0	trung_thành#1	kiên định trong tình cảm hay lòng trung thành; "năm phục vụ trung thành", "trung thành nhân viên", "chúng tôi không nghi ngờ rằng nước Anh có một người yêu nước trung thành trong Chancellor Chúa"
-a	00959731	0.625	0	chung_thủy#1	không đúng với nhiệm vụ hoặc nghĩa vụ hoặc hứa hẹn;  "một người yêu  không chung thủy"
-a	00959979	0	0.625	bỏ_đạo#1	không trung thành với tôn giáo hoặc bên gây ra ; "anh ta mang tiếng bỏ đạo"
-a	00960094	0	0.5	nguy_hiểm#2	 có thể gây hại lớn; "quả bom nguy hiểm"
-a	00960481	0.125	0.75	không đúng sự_thật#2	không đúng với một nghĩa vụ hay sự tin tưởng; "là không đúng sự thật để có cơ hội cao nhất và nhiệm vụ của mình" Bruno Laske
-a	00963502	0	0.5	chịu_nổi#2	bao gồm hoặc đặc điểm, kích động bạo loạn; "hành vi thể chịu nổi", "chịu nổi ý nghĩ", "một bài phát biểu thể chịu nổi"
-a	00964303	0.25	0.625	lang_thang#1	đi lạc từ các khóa học phải hoặc từ các tiêu chuẩn được chấp nhận; "trẻ lang thang"
-a	00966477	0	0.625	lạ#1	không được biết đến hoặc biết đến; "một cái tên xa lạ với hầu hết", "cảnh giác vào ban đêm đặc biệt là trong môi trường xung quanh không quen thuộc"
-a	00968730	0.5	0	kỳ_lạ#2	nổi bật lạ hay bất thường; "một kiểu tóc kỳ lạ", "proton, neutron, điện tử và tất cả các biến thể lạ", "cảnh quan kỳ lạ của một hành tinh chết"
-a	00983862	0.5	0	khó_tính#1	cho sự chú ý cẩn thận đến từng chi tiết, khó lòng, quá quan tâm đến sự sạch sẽ; "một trí thức khó tính và sắc bén", "khó tính về vệ sinh cá nhân"
-a	00990855	0.5	0	mảnh_dẻ#3	gầy và mảnh, trông có vẻ yếu ; "dáng người mảnh dẻ"
-a	01000881	0	0.75	khổ_sở#1	đau đớn và cực khổ ;  "một lời nhận xét khổ sở"
-a	01001180	0	0.75	vớ_vẩn#1	chẳng có nghĩa lí gì, chẳng có tác dụng gì thiết thực ; "toàn những thứ vớ vẩn"
-a	01001547	0	1	bất_hạnh#3	không may gặp phải điều rủi ro, làm cho đau khổ ; "đứa trẻ bất hạnh"
-a	02395115	0.625	0.25	ngon#1	đẹp lòng ý thức hương vị; "một miếng ngon"
-a	02423432	0.5	0	gọn_gàng#2	tỏ ra chu đáo trong thực hiện; "gọn gàng bài tập ở nhà", "chữ viết tay gọn gàng"
-a	02423284	0.5	0.375	trật_tự#2	sạch hoặc tổ chức; "ăn mặc gọn gàng của cô", "một căn phòng gọn gàng"
-a	02418538	0	0.625	không_thể_tưởng_tượng#1	không có khả năng được hình thành hoặc xem xét
-a	02418872	0.625	0	chu_đáo#2	triển lãm hoặc được đặc trưng bởi suy nghĩ cẩn thận, "một giấy chu đáo"
-a	02421003	0	0.75	vô_tâm#1 không suy_nghĩ#1 không_biết suy_nghĩ#1	không trưng bày hoặc đặc trưng bởi suy nghĩ cẩn thận
-a	02422685	0.625	0	ngăn_nắp#1	đánh dấu theo thứ tự và sạch sẽ trong xuất hiện hoặc thói quen, "một người ngăn nắp", "một ngôi nhà sạch sẽ", "một tâm ngăn nắp"
-a	02427087	0.625	0	chỉnh_tề#1	gọn gàng và thông minh trong hình; chăm sóc tốt, "người quản lý là một người đàn ông trẻ đẹp ăn mặc chỉnh tề", "con ngựa của ông là luôn luôn sạch sẽ"
-a	02425220	0.125	0.75	bù_xù#1 bị làm nhàu#1 nhăn nhúm#1 nhăn nhúm#1	trong tình trạng lộn xộn; cực kỳ hỗn loạn "quần áo của cô đã bị nhăn nhíu", "bôi bột và frowzled", "một giường bị làm nhăn nhúm "," một chiếc giường với tấm rối bù "," tóc nâu của ông đã được làm rối, dày, và xoăn "
-a	02425529	0	0.5	lộn_xộn#1 không trật_tự#1 mất trật_tự#2	trong rối loạn hoàn toàn, "một đống quần áo bừa bãi"
-a	02426042	0	0.875	bừa_bộn#1	dơ bẩn và mất trật tự, "một phòng ngủ quấy khóc bừa bộn", "thói quen ăn uống lộn xộn của một đứa trẻ"
-a	02435671	0	0.625	không chịu_đựng được#1 không_thể chịu_đựng#1 không_thể chấp_nhận#1	không có khả năng được đưa lên với, "một mức độ không thể chấp nhận của tình cảm"
-a	02435901	0	0.5	cay_đắng#2	rất khó khăn để chấp nhận hoặc chịu, "sự thật cay đắng", "một nỗi buồn cay đắng"
-a	02436341	0.5	0	chịu#1	hiển thị tôn trọng các quyền hay ý kiến hoặc thực hành của người khác
-a	02450640	0	0.625	không độc#1 không có chất_độc#1	không sản xuất hoặc thu được từ chất độc
-a	02451951	0	0.75	khó#1	không dễ làm, khó quản lý hoặc nấm mốc; "một khuynh hướng khó chữa", "khó chữa đau", "vấn đề khó nhất của thời đại chúng ta", "khó chữa kim loại"
-a	02455845	0	0.5	quấy_rầy#1 làm_phiền#1 quấy_rối#2	rắc rối liên tục đặc biệt là với các phiền toái nhỏ; "quấy nhiễu bà mẹ làm việc", "một biểu hiện quấy rầy", "nghèo cha quấy rầy cô ấy đã phải chịu đựng gián đoạn liên tục của cô "," sự bực bội cha mẹ của một thiếu niên ngang bướng "
-a	02458871	0	0.5	khổ#1	rắc rối bởi đau đớn hay mất mát; "những người tị nạn đau khổ"
-a	02459109	0	0.625	thanh_thản#1	không gặp phải khó khăn, rối loạn suy hay, "có vẻ thanh thản bởi sự nghi ngờ của loại nào", "giấc ngủ thanh thản", "một loại mặt thanh thản"
-a	02462089	0	0.75	gian_dối#2	cố ý sai sự thật, "một tuyên bố gian dối"
-a	02464277	0	0.625	cảnh_giác#2 nghi_ngờ#1	công khai không tin tưởng và không muốn để tâm sự
-a	02465978	0.5	0	tin_cậy#1	 (của người) xứng đáng với sự tin tưởng hoặc sự tự tin, "một người bạn chắc chắn (hoặc đáng tin cậy)"
-a	02469928	0	0.75	không điển_hình#1	không phải đại diện của một lớp, nhóm, hoặc các loại; "một nhóm đó là điển hình của các đối tượng mục tiêu", "một lớp học của rêu không điển hình", "hành vi không điển hình là không phải là loại được chấp nhận của các phản ứng mà chúng ta mong đợi ở trẻ em "
-a	02488304	0.5	0	cao_cấp#1	thích hợp cho người có thu nhập tốt, "một khu phố cao cấp", "một nhà trọ cao cấp"
-a	02497141	0.125	0.625	vô_dụng#1	không có sử dụng có lợi hoặc không có khả năng hoạt động hữu ích, "một nhà bếp đầy đủ các tiện ích vô dụng", "cô ấy là vô ích trong trường hợp khẩn cấp"
-a	02497743	0	0.5	vô_ích#1	không có giá trị sử dụng; "làm một công việc vô ích"
-a	02497013	0.5	0	dùng được#1	có khả năng được đưa vào sử dụng lợi nhuận hoặc một thực tế; "hệ thống này có thể ứng dụng vào thực tế"
-a	02499750	0	0.75	không hợp_lệ#1	không có khẩn cấp hoặc hiệu lực pháp luật; "lý luận không hợp lệ", "bằng lái hợp lệ của"
-a	02502163	0.75	0.25	vô_giá_trị#1	thiếu tính hữu dụng hoặc giá trị; "một người lười biếng vô giá trị"
-a	02502994	0.125	0.5	vặt#1 không_đáng_kể#2	không có giá trị xem xét, "ông coi là giải thưởng quá ít ỏi cho cuộc sống thì phải chi phí"
-a	02503305	0	0.625	vô_nghĩa#3 không có ý định#2	không phục vụ mục đích hữu ích, không có lý do gì để được; " một lời nhận xét vô nghĩa "
-a	02513614	0.625	0.125	vô_tội#3 không_có gì chê_trách được#1	không phạm tội; "người dân vô tội"
-a	02513740	0	0.625	ác#1	về mặt đạo đức xấu về nguyên tắc hành nghề; "Một người hành nghề độc ác"
-a	02531243	0.5	0.25	nồng_nhiệt#1	hiển thị thân thiện ấm áp và chân thành, "đã cho chúng tôi một buổi tiếp tân thân mật", "một nồng nhiệt chào đón"
-a	02527489	0.625	0	mong_mỏi#1	rất mong muốn; "bà mẹ mong mỏi đứa con trở về"
-a	02539968	0.5	0	hoan_nghênh#1	cho niềm vui hay sự hài lòng hoặc nhận với niềm thích thú hoặc tự do; "giảm bớt gánh nặng", "một vị khách được hoan nghênh", "làm các em cảm thấy được hoan nghênh", "bạn được hoan nghênh tham gia chúng ta "
-a	02541012	0.625	0.375	bình_phục#1 chữa lành#1 chữa khỏi#1	giải thoát khỏi bệnh tật hoặc chấn thương, "bệnh nhân khỏi bệnh xuất hiện", "vết mổ lành", "dường như là hoàn toàn bình phục", "khi bị thu hồi bệnh nhân sẽ cố gắng để nhớ những gì xảy ra trong mê sảng của ông " Cameron Normon
-a	02543324	0	0.625	bị viêm cuống_phổi#1	bị hoặc dễ bị viêm phế quản; "Viêm họng lâu ngày có thể dẫn tới viêm cuống phổi"
-a	02544048	0	0.75	chóng_mặt#1 chóng_mặt#1 ham_chơi số 1 chóng_mặt#1	có hoặc gây ra một cảm giác quay cuồng, chịu rơi, "đã có một lỗi chính tả chóng mặt", "một đỉnh cao chóng mặt", "bị đau đầu và cảm thấy ham chơi "," một bờ vực, ham chơi "," cảm giác woozy từ thổi trên đầu "," một lên cao chóng mặt lên mặt vách đá "
-a	02545023	0	0.625	là lạ#4	trải qua cảm giác kỳ lạ của cơ thể, "nói với bác sĩ về những cảm giác là lạ trong lồng ngực của mình"
-a	02545257	0	0.75	xanh#4	nhìn xanh xao và không lành mạnh, "bạn đang tìm kiếm màu xanh lá cây", "xanh xao vàng vọt"
-a	02545989	0	0.5	tê_liệt#1 liệt#2	bị ảnh hưởng với tình trạng tê liệt; "hệ thống giao thông bị tê liệt hoàn toàn"
-a	02550891	0	0.5	dính#1	 (của một nếp lỏng như sơn) không hoàn toàn khô và hơi dính khi chạm vào, "dính sơn"
-a	02557357	0.625	0	lành_mạnh#1	lợi cho hay đặc tính của vật lý hay đạo đức tốt được, "thái độ lành mạnh", "sự xuất hiện lành mạnh", "thực phẩm lành mạnh"
-a	02558184	0.875	0	hợp_vệ_sinh#1	tăng cường sức khỏe, sức khỏe, "một chế độ ăn uống lành mạnh", "làm sạch không khí lành mạnh", "rất nhiều của giấc ngủ lành mạnh", "lành mạnh và bình thường thị trường tiêu thụ năng lượng trẻ trung "," không khí núi hợp vệ sinh và nước " CBDavis;" cà rốt rất tốt cho bạn "
-a	02563616	0	0.5	dễ sử_dụng#1	dễ dàng để xử lý hoặc sử dụng hoặc quản lý, "một cuốn sách lớn nhưng dễ sử dụng"
-a	02565701	0.5	0	sẵn_sàng#3	tinh thần xử lý, "ông đã sẵn sàng để tin rằng cô ấy"
-a	02566015	0	0.75	không muốn#1	không xử lý hoặc hướng về, "một trợ lý không muốn", "không muốn phải đối mặt với sự thật"
-a	02566453	0.125	0.625	miễn_cưỡng#1	làm theo một sự bắt buộc, không muốn làm việc đó; "một nụ cười miễn cưỡng", "bất đắc dĩ phải thừa nhận một sai lầm"
-a	02569558	0.625	0	khôn#1	cấp tính sâu sắc và khôn ngoan; "quan sát và suy nghĩ, ông đã được trao cho những câu hỏi khôn ngoan "," một nguồn hiểu biết sâu sắc giá trị và những lời khuyên khôn ngoan để các nhà giáo dục "
-a	02570282	0	0.625	ngu_ngốc#1 dốt#1	không có các cảm giác tốt hoặc bản án, "phát biểu ngu ngốc", "một quyết định điên rồ"
-a	02580449	0	0.5	mòn#1	bị ảnh hưởng bởi mặc; bị hư hỏng do sử dụng lâu, "mặc các chủ đề trên các vít", "một phù hợp với mòn", "các túi đeo trên áo các"
-a	02585545	0.625	0	đáng_khen_ngợi#1#1 rất đáng mừng#1 đáng hoan_nghênh#1	xứng đáng với lời khen ngợi cao; "nỗ lực đáng khen ngợi để cứu lấy môi trường", "một ý thức đáng khen ngợi về mục đích", "đáng khen ngợi động cơ của việc cải thiện điều kiện nhà ở "," một sự gia tăng đáng kể và đáng mừng trong tình báo máy tính "
-a	02587738	0.625	0	quý_giá#1	có giá trị hoặc công đức hoặc giá trị, "một người bạn quý giá", "một người đàn ông tốt và quý giá"
-a	02587261	0.75	0	thiêng liêng#2	xứng đáng với sự tôn trọng hay sự cống hiến, "nhìn thấy mẹ là gọi thiêng liêng của người phụ nữ"
-a	02588647	0.5	0	không xác_đáng#1	không có công đức; "bảo vệ ... từ những lời chỉ trích không xác đáng"
-a	02594565	0	0.75	lành#1	không nguy hiểm đến sức khỏe, không tái phát hoặc tiến bộ (đặc biệt là của một khối u); "u lành không nguy hiểm đến tính mạng"
-a	02594714	0.5	0.25	ác_tính#1	nguy hiểm cho sức khỏe, đặc trưng bởi sự phát triển tiến bộ và không kiểm soát được (đặc biệt là của một khối u); "Cô ta bị mắc những khối u ác tính"
-a	02605416	0.375	0.5	tiêu_độc#1	chống lại những ảnh hưởng của chất độc; "thuốc giải viêm, tiêu độc"
-a	02605953	0.5	0	kháng virus#1	ức chế hoặc ngăn chặn sự tăng trưởng và sinh sản của virus; "chất kháng virus"
-a	02612653	0	0.625	dị_ứng#1	đặc trưng bởi hoặc gây ra do dị ứng; "một phản ứng dị ứng"
-a	02647358	0	0.5	suy_nhược#1	đặc trưng bởi sự thiếu trương lực; "ăn kém sẽ dẫn đến suy nhược cơ thể"
-a	02661446	0.625	0	nhân_từ#1	có ý định hoặc hiển thị lòng tốt, "một xã hội nhân từ"
-a	02670812	0	0.5	không vành#1	mà không có một vành; "một cái mũ không vành"
-a	02671885	0	0.625	háu_ăn#1	bị mắc chứng cuồng ăn vô độ; "đồ háu ăn"
-a	02679858	.125	0.5	gây ung_thư#1	gây ra hoặc có xu hướng gây ra ung thư, "các hành động gây ung thư của hóa chất nhất định"
-a	02708232	0.5	0	tuần_hoàn#1	phù hợp với chu kỳ Carnot; "vòng quay tuần hoàn"
-a	02746103	0	0.75	suy_giảm_miễn_dịch#1	không thể phát triển một đáp ứng miễn dịch bình thường thường là do suy dinh dưỡng hoặc suy giảm miễn dịch hay liệu pháp ức chế miễn dịch; "HIV là hội chứng suy giảm miễn dịch mắc phải"
-a	02806261	0.625	0	bền_vững#1	có khả năng được duy trì; "các chất hữu cơ bền vững"
-a	02833873	0.625	0	kháng_khuẩn#1	phá hủy vi khuẩn hoặc ức chế sự tăng trưởng của họ; "Chất kháng khuẩn"
-a	02848119	0	0.5	phi tài_chính#1	không liên quan đến vấn đề tài chính; "Các vấn đề phi tài chính"
-a	02879535	0	0.75	phi ngôn_ngữ#1	không được bao gồm trong các lĩnh vực của ngôn ngữ; "hành vi phi ngôn ngữ"
-a	02858816	0.125	0.5	cá_nhân#3	trong hoặc phát sinh từ tính cách, "cá nhân từ tính"
-a	02911488	0	0.625	phi tham_số#1	không liên quan đến một dự toán của các tham số của một số liệu thống kê; "dữ liệu phi tham số"
-a	02929901	0.5	0	hợp_lý#3	có khả năng được thể hiện như là một thương của số nguyên; "số lượng hợp lý"
-a	02951702	0.625	0.25	êm_tai#1	để nghe êm tai hoặc liên quan đến hay đặc trưng của luật hài âm; "âm thanh êm tai"
-a	02998269	0.625	0	tinh_túy#1	đại diện cho ví dụ hoàn hảo của một lớp học hay chất lượng; "sự tinh túy của cuộc sống"
-a	03119608	0.125	0.625	co_cứng#1	liên quan đến hay đặc trưng bởi sự co thắt; "một tràng co cứng", "liệt co cứng là một dạng co cứng của bại não"
-a	01160031	0	0.625	hại#1	gây ra hoặc có khả năng gây hại, "mặt trời quá nhiều có hại cho da", "hiệu ứng có hại của hút thuốc lá"
-a	01160584	0	0.875	lạm_dụng#2	đặc trưng bởi sự ngược đãi về thể chất hoặc tâm lý, "lạm dụng hình phạt", "tranh luận ... mà các gia đình nuôi dưỡng được lạm dụng"
-a	01161233	0	0.875	vu_khống#1 bôi_nhọ#1 phỉ_báng#1 nói_xấu#1 gièm_pha#1	(sử dụng các câu lệnh) có hại và thường không đúng sự thật; xu hướng mất uy tín hoặc hung tinh; "đừng có mà vu khống!"
-a	01161635	0	0.75	tai_hại#1 thê_thảm#1	rất có hại, mang thiệt hại về vật chất hoặc về tài chính; "một sự đình đốn thê thảm", "thảm họa bệnh tật"
-a	01161877	0.125	0.5	phản_tác_dụng#1	xu hướng cản trở việc đạt được các mục tiêu; "uống quá nhiều thuốc sẽ phản tác dụng"
-a	01162267	0	0.75	tồi#2	dẫn đến đau khổ hay nghịch cảnh, "hiệu quả tồi", "đó là một cơn gió tồi mang lại những điều không tốt"
-a	01162406	0	0.625	xảo_quyệt#3 quỷ_quyệt#3	làm việc hoặc phát tán một cách ẩn và thường gây tổn hại, "bệnh tăng nhãn áp là một căn bệnh ác tính", "một chất độc ác tính"
-a	01162817	0	0.5	có_hại#1	có một xu hướng gây ra thiệt hại; "Hút thuốc lá có hại cho sức khỏe"
-a	01162901	0	0.75	đau_thương#1 đau_nhói#1	gây tổn thương về thể chất hoặc đặc biệt là tâm lý, "một lời nhận xét đau nhói", "đau thương và sai tội bất trung"
-a	01163083	0.75	0	du_dương#1	âm thanh êm tai, dễ chịu; "Điệu nhạc du dương"
-a	01163860	0.5	0.25	tinh_khiết#4	không có tạp chất; "Nước tinh khiết"
-a	01164072	0	0.75	không điều hòa#1	không hài hòa; "Cơ thể phát triển không cân đối"
-a	01165474	0.625	0	kháng_sinh#1	có khả năng tiêu diệt hoặc ức chế sự tăng trưởng của vi sinh vật gây bệnh; "thuốc kháng sinh"
-a	01166413	0.875	0	bổ_ích#1	chăm sóc để thúc đẩy vật lý tốt được, có lợi cho sức khỏe; "lợi ích của một chế độ ăn uống cân bằng", "một đêm ngon giấc ngủ", "ảnh hưởng bổ ích của không khí tinh khiết "
-a	01166875	0.625	0	hữu_cơ#5	đơn giản và lành mạnh và gần gũi với thiên nhiên, "một lối sống hữu cơ"
-a	01167269	0.75	0	phòng_ngừa#3 phòng#1 ngăn_chặn#2	phòng ngừa ngăn chặn hoặc đóng góp cho công tác phòng chống dịch bệnh; "y tế dự phòng", "vắc xin được dự phòng", "một loại thuốc dự phòng"
-a	01167817	0	0.5	hại_sức_khỏe#2	không có lợi cho sức khỏe; "không khí ô nhiễm hại sức khỏe", "điều kiện hại sức khỏe trong các căn hộ cũ với lột sơn chì"
-a	01168166	0	0.5	vô_hiệu_hóa#1 làm tê_liệt#1	vô hiệu hóa hoặc làm tê liệt; "một chấn thương làm tê liệt"
-a	01168315	0	0.5	gây_bệnh#1	liên quan đến hoặc gây thay đổi bệnh lý trong tế bào; "Các tế bào gây bệnh"
-a	01168845	0.125	0.875	không lành_mạnh#3	không có lợi cho sức khỏe, "một chế độ ăn uống không lành mạnh của thức ăn nhanh", "một môi trường không lành mạnh"
-a	01169940	0.25	0.75	không hoạt_động#2	không thích hợp với phẫu thuật; "di căn hiện nay làm cho khối u không thể hoạt động"
-a	02390569	0	0.625	hỗn_loạn#2	hoàn toàn không có thứ tự và không thể đoán trước và khó hiểu; "Các phân tử chuyển động hỗn loạn"
-a	02391455	0.5	0	hữu_hình#1 có_thể sờ_mó được#1	thể nhận bằng các giác quan đặc biệt là cảm giác sờ, "da với một độ nhám hữu hình"
-a	02391867	0.125	0.625	phi vật thể#2 không sờ_thấy được#1 vô hình#2	không có khả năng cảm nhận của các giác quan đặc biệt là cảm giác sờ, "các thành phần phi vật thể của năng lượng" James Jeansa
-a	01170069	0	0.5	gây sốt#1	nguyên nhân dẫn đến bị sốt; "bị cảm sẽ gây sốt
-a	01170823	0.875	0	hồng_hào#1 hồng#2 má_hồng#1	da có màu hồng hào khỏe mạnh; "Ông cụ da dẻ hồng hào"
-a	01170243	0.625	0	khỏe_khoắn#1	có hoặc chỉ có sức khỏe tốt trong cơ thể hay tâm trí; không chịu thương tật hoặc bệnh tật, "một em bé khỏe khoắn hồng hào", "cân đối và khỏe khoắn"
-a	01170984	0.75	0	khỏe_mạnh#1	sức khỏe tốt, "một em bé khỏe mạnh"
-a	01170984	0.75	0	khỏe#1	sức khỏe tốt, "một em bé khỏe mạnh"
-a	01170984	0.75	0	mạnh#1	sức khỏe tốt, "một em bé khỏe mạnh"
-a	01171076	0.75	0	săn chắc#8	sở hữu sự rắn chắc và khả năng phục hồi tốt của các mô, "cơ bắp săn chắc"
-a	01171076	0.75	0	săn#8	sở hữu sự rắn chắc và khả năng phục hồi tốt của các mô, "cơ bắp săn chắc"
-a	01171076	0.75	0	chắc#8	sở hữu sự rắn chắc và khả năng phục hồi tốt của các mô, "cơ bắp săn chắc"
-a	01171396	0.75	0	sung_sức#4 tráng_kiện#1	triển lãm hoặc khôi phục lại sức khỏe tốt mạnh mẽ, "khỏe mạnh và sung sức", "khỏe cả trong tâm trí và cơ thể", "lại một người khỏe mạnh"
-a	01171606	0.75	0	mạnh_khỏe#4	tiêu thụ dồi dào và với lạc thú; "một bữa ăn lành mạnh (hoặc mạnh khỏe)"
-a	01172139	0.5	0	tươi_tắn#1 đỏ_ửng#1 tươi như hoa#2	nghiêng sang màu đỏ khỏe mạnh thường gắn liền với cuộc sống ngoài trời, "một làn da hồng hào", "má đỏ ửng như của Santa", "một làn da tươi tắn hồng hào "
-a	01172594	0.75	0	trẻ_trung#1	chỉ người lớn tuổi khỏe mạnh; "Cô ấy 30 rồi, nhìn vẫn trẻ trung"
-a	01173697	0	0.875	nhức_nhối#3	bị viêm và đau đớn, "một đau nhức nhối"
-a	01175007	0	0.75	đỏ_ngầu#1	 (của một mắt) đỏ như là kết quả của các mạch máu bị tắc nghẽn tại địa phương; viêm, "đôi mắt đỏ ngầu"
-a	01174222	0	1	không khỏe_mạnh#5 không tốt#10	thể chất không lành mạnh hoặc bị bệnh, "có một cái lưng không tốt", "một trái tim không lành mạnh", "hàm răng xấu", "chân tay không khỏe mạnh", "răng yếu"
-a	01175158	0	0.625	bị loét#1 bị ung_loét#1 bị thối mục#1	có vết viêm loét hoặc thối mục; "vết thương bị lở loét nhiễm trùng"
-a	01175741	0	0.625	đầy khí#2 đau_bụng#1	bị tích quá nhiều khí trong ống tiêu hóa; "ăn nhiều lạc làm bụng đầy khí"
-a	01176246	0.125	0.625	bệnh_lý#1 bệnh_học#1 bệnh_hoạn#3 bệnh#1	gây ra bởi hoặc bị thay đổi do bệnh biểu hiện hoặc hoặc bệnh lý; "bệnh viêm amiđan", "một sự phát triển bệnh hoạn", "mô bệnh học", "các quá trình bệnh lý của cơ thể "
-a	01176544	0	0.75	bị chứng_phù#1 phù#1	sưng lên với một sự tích lũy quá mức của chất lỏng; "Vết bỏng đã bị phù lên"
-a	01176973	0	0.5	bị thối hoại#1 hoại_tử#1	bị chết mô; "vết thương đang hoại tử
-a	01177105	0	0.875	sưng_tấy#1	sinh từ tình trạng viêm, nóng và sưng và đỏ, "đôi mắt bị sưng tấy vì khóc"
-a	01177105	0	0.875	tấy#1	sinh từ tình trạng viêm, nóng và sưng và đỏ, "đôi mắt bị sưng tấy vì khóc"
-a	01177246	0	0.75	viêm#1	đặc trưng hoặc gây ra do viêm nhiễm, "một quá trình viêm nhiễm", "một phản ứng viêm"
-a	01177556	0	0.625	vàng#6 vàng da#1	bị ảnh hưởng bởi bệnh vàng da gây vàng da vv; "cô ấy bị vàng da"
-a	01177899	0.125	0.5	tâm_thần#5	bị ảnh hưởng bởi một chứng rối loạn của tinh thần, "một bệnh nhân tâm thần", "tâm thần"
-a	01178134	0	0.875	ốm_yếu#1 vàng_vọt#1	dáng điệu không mạnh khỏe; "dáng gầy ốm"
-a	01178231	0	0.75	bị đau_mắt#1	có đau mắt, đau mắt đỏ hoặc viêm kết mạc; "bệnh đau mắt có thể lây lan"
-a	01178458	0	0.875	bị giãn tĩnh_mạch#1	mạch bị sưng hoặc có nhiều màu bất thường; "giãn tĩnh mạch"
-a	01178669	0	0.75	khô#7	không có chất nhầy hoặc chảy nước; "ho khan", "rằng điều hiếm hoi trong mùa đông, một con  với một mũi khô"
-a	01178856	0.5	0.375	có đờm#1	đặc trưng bởi đờm, "một cơn khạc đờm"
-a	01179345	0.5	0	trên thiên_đường#2 thanh_tao#3 như thiên_đàng#3	thuộc về thiên đường hay các vì tinh tú, "sự bình yên của thiên đường", "giai điệu thanh tao", "hạnh phúc trên thiên đường của một cái chết yên tĩnh"
-a	01179767	0.5	0	thần_thánh#2 thiêng_liêng#3	được hoặc có tính chất của một vị thần; "tục giết vua thần khi có sự thất bại nghiêm trọng của ... quyền hạn của mình" JGFrazier; "các thần linh sẽ "," năng lực thiêng liêng cho tình yêu "," 'Tis khôn ngoan để tìm hiểu;' tis Thiên Chúa giống như để tạo ra " JGSaxe
-a	01181446	0	0.5	thuộc trái_đất#2 trần_tục#3	thuộc trái đất này hay thế giới, không lý tưởng hoặc siêu phàm, "không phải là cổ tích hoàng cung, chưa một kỳ trần tục của loại hình tưởng tượng"
-a	01182414	0	0.5	nhẹ#8	dễ tiêu, không giàu chất hay nhiều gia vị, "một chế độ ăn uống nhẹ"
-a	01182974	0	0.5	đầy_hơi#1	tạo ra quá nhiều khí trong ống tiêu hóa; "ăn nhiều lạc dẫn đến đầy hơi"
-a	01183274	0	0.5	không tiêu#1	không tiêu hóa được; "ăn quá nhiều gây không tiêu"
-a	01183436	0.125	0.625	nặng_bụng#1	nặng và có bột và khó tiêu hóa, "thức ăn nặng bụng", "một chiếc bánh pudding nặng bụng được mang lên khi mọi người đã no"
-a	01188058	0	0.75	hạng nhẹ#1	không được thiết kế cho công việc nặng nề, "một chất tẩy rửa hạng nhẹ"
-a	01190168	0	0.625	nặng_nề#4	mức độ nặng nề vào tinh thần, gây bồn chồn hoặc lo lắng, "vấn đề nặng nề"
-a	01189386	0	0.875	đáng_lo_ngại#2 nhiễu_loạn#1 đau#1 buồn_phiền#1 làm buồn_rầu#1	gây đau khổ hay bồn chồn hoặc lo lắng, "tin tức đau buồn (hay đáng lo ngại)", "sống trong anh hùng nếu bị một cái gì đó làm buồn rầu cô lập "," một số lượng tội phạm đáng lo ngại"," một ý nghĩ mới và gây phiền hà "," trong một tình cảnh đáng lo ngại "," một tình trạng đáng lo lắng"," một thời gian lo lắng"
-a	01195963	0.5	0	sẵn_lòng giúp_đỡ#2	mang ơn, sẵn sàng làm ơn; "đã thực hiện một nỗ lực đặc biệt để được sẵn lòng giúp đỡ"
-a	01199663	0	0.5	không đều#1 không đồng_nhất#1	không đồng nhất; "dân số phân bố không đều"
-a	01190993	0	0.625	nhẹ_nhàng#4	không lớn về mức độ hoặc số lượng hoặc số; "một câu nhẹ nhàng", "một giọng nói nhẹ nhàng", "thương vong đã được giảm nhẹ", "tuyết rơi nhẹ nhàng"
-a	01196276	0.5	0	giúp_đỡ#1	trợ giúp; "giúp đỡ người tàn tật qua đường
-a	01196367	0.5	0	giữ thể_diện#1	duy trì nhân phẩm, uy tín, "một sự thỏa hiệp giữ thể diện"
-a	01208571	0.5	0	công_nghệ cao#1 công_nghệ cao#1	làm việc sử dụng các công nghệ và các thiết bị tiên tiến; "trường ông ấy toàn các thiết bị công nghệ cao"
-a	01210581	0.25	0.5	lãi_suất thấp#1	 (sử dụng các khoản cho vay) tính một tỷ lệ tương đối nhỏ của số tiền vay; "các hộ nghèo được vai tiền lãi suất thấp"
-a	01210717	0.125	0.5	lãi_suất cao#1	 (sử dụng các khoản cho vay) tính một tỷ lệ tương đối lớn của số tiền vay; "vì cần tiền lắm, ông ta đi vay lãi suất cao"
-a	01211296	0.5	0	nâng_cao#4	ở mức độ cao hơn trong đào tạo, kiến thức hoặc kỹ năng; "có bằng cấp cao", "một văn bản cao cấp trong vật lý", "các cuộc hội thảo đặc biệt cho các nhóm nhỏ các học sinh tiên tiến tại trường Đại học"
-a	01212867	0	0.5	xuống#6 giảm#1	thấp hơn so với trước đây, "thị trường đang xuống", "giá giảm"
-a	01214430	0.5	0	sắc nét#6	có hoặc phát ra một giọng điệu the thé và sắc nét hoặc tấn; "một cái còi gay gắt", "một sự vui tươi sắc nét"
-a	01216317	0	0.625	khàn_khàn#1	nghe như phát âm thấp trong cổ họng, "một giọng nói khàn khàn"
-a	01217338	0	0.5	mô_phỏng#2	sao lại hoặc làm cho giống; mô phỏng trong nhân vật, "trong điều kiện chiến đấu mô phỏng"
-a	01221057	0	0.625	dị#1 dị_dạng#1 biến_dị#1	không tương ứng trong cấu trúc hay nguồn gốc tiến hóa; "di truyền ngược với biến dị"
-a	01225898	0	0.625	sai sự_thật#1	không thể hiện hoặc thể hiện cho sự thật, "tuyên bố được đưa ra theo lời thề là sai sự thật", "một người không trung thực"
-a	01226240	0.75	0	danh#1	đáng được tôn vinh, được tôn vinh và kính trọng, "một người đàn ông đáng kính", "đã dẫn đầu một cuộc sống đáng kính", "vinh danh cho đất nước của mình"
-a	01226660	0.5	0	kính#2 đáng_kính_trọng#2	sâu sắc tôn vinh, "thánh đàn ông tôn kính"
-a	01224253	0.125	0.75	chất_lượng kém#3 lừa_đảo#1 gây hiểu_lầm#2	thiết kế để lừa dối hoặc gây nhầm lẫn là sự cố ý hay vô tình, "bình tĩnh lừa đảo trong mắt của các cơn bão", "cố ý lừa đảo bao bì", "một sự tương tự gây nhầm lẫn "," thống kê có thể được trình bày theo nhiều cách gây hiểu lầm "," thực tế kinh doanh kém chất lượng "
-a	01229020	0	0.75	vô_vọng#1	mà không có hy vọng bởi vì có vẻ là không có khả năng thoải mái hay thành công, "buồn vô vọng trong khổ đau", "với một tiếng thở dài tuyệt vọng, ông ngồi xuống"
-a	01223941	0	0.625	gian_lận#1	dùng để đánh lừa, "quảng cáo gian dối", "lời khai giả dối", "mịn màng, sáng, và gian dối như băng mỏng" STColeridge; "một kế hoạch lừa đảo để thoát khỏi nộp thuế "
-a	01227137	0	0.5	đê_tiện#1	thiếu danh dự hoặc thiếu tính toàn diện; đáng bị sỉ nhục; "đê tiện trong suy nghĩ và hành động"
-a	01227546	0.125	0.5	lăng_nhục#1 đáng xấu_hổ#2 ô_nhục#1 đen_tối#12	 (được sử dụng trong thực hiện hoặc ký tự) xứng đáng bị lăng nhục hay nhục nhã hay xấu hổ, "Man ... đã viết một trong hồ sơ của ông blackest như là một tàu khu trục trên các đảo đại dương " Rachel Carson," một sự rút lui ô nhục "," thất bại ô nhục "," một di tích lăng nhục cho sự tham lam của con người "," một thước phim đáng xấu hổ của sự hèn nhát "
-a	01228050	0	0.625	xuống_cấp#2 giảm_giá_trị#1	sử dụng bởi tổ chức; đặc trưng bởi ô danh; "bộ máy nhà nước xuống cấp"
-a	01230521	0	0.625	không có tương_lai#1	không có khách hàng tiềm năng hoặc hy vọng về một tương lai; "những đứa trẻ ấy không có tương lai"
-a	01241248	0	0.625	ứ_đọng#1	không được lưu hành hoặc chảy; "không khí ứ đọng", "nước chết", "nước ứ đọng"
-a	01250694	0	0.75	chang_chang#3	cực kỳ nóng; "mặt trời trưa chang chang", "những hạt cát oi bức của sa mạc"
-a	01250835	0	0.5	nhiệt_đới#4	của thời tiết hoặc khí hậu nóng ẩm như ở vùng nhiệt đới, "khí hậu nhiệt đới"
-a	01251830	0	0.625	lạnh_toát#1	người; cảm thấy lạnh; "thương Tom lạnh toát" Shakespeare
-a	01252151	0	0.75	cực#5 băng#2 bị lạnh#3 băng#1 lạnh bắc_cực#2 rất lạnh#2	; " khí_hậu Bắc_cực " , " một ngày lạnh_lẽo " , " bị lạnh vùng_biển Bắc_Đại_Tây_Dương " ; " gió băng " , " bàn_tay băng_giá " , " thời_tiết_cực "
-a	01253022	0	0.5	sinh_hàn#1	gây lạnh; làm mát hoặc làm lạnh; "mỏ thiếc sinh hàn"
-a	01249137	0.625	0	có_thể làm nóng#1	có khả năng trở thành nóng; "đầu có thể làm nóng của một miếng sắt hàn"
-a	01250393	0	0.625	oi_ả#1 ngột_ngạt#1	quá nóng và ẩm ướt hoặc đánh dấu bằng mồ hôi và sự uể oải; "một căn phòng ngột ngạt", "vận động viên ngột ngạt"
-a	01261363	0.5	0	phi thường#5	hiển thị sức mạnh siêu nhân hay quyền lực, "sự nỗ lực phi thường"
-a	01260023	0	0.625	không_phải người#1	không phải con người; không thuộc hoặc được sản xuất bởi hoặc phù hợp với con người, "động vật linh trưởng không phải người như tinh tinh"
-a	01263971	0	0.625	không cảm_động#2 máu_lạnh#1 lạnh_lùng#9	mà không có sự ăn năn hay cảm giác của con người; "máu lạnh", "giết người máu lạnh", "hủy hoại một cách không cảm động"
-a	01266841	0.5	0.125	vui_nhộn#1	đánh dấu bằng hoặc gây sự vui vẻ hay tiếng cười rộn rã co quắp; "phim hài vui nhộn", "một trò hề la hét", "câu chuyện náo nhiệt"
-a	01267076	0.875	0	đùa#1 vui_đùa#1 pha_trò#1	đặc trưng bởi tiếng cười và sự hài hước; "thỉnh thoảng cũng nên vui đùa"
-a	01307067	0.5	0	thân_giao#1	 (thường là đi trước `với ') được biết nhiều hoặc biết hoàn toàn về cái gì đó," thân giao với xu hướng kinh doanh "," quen thuộc với các máy móc phức tạp "," quen thuộc những con đường "
-a	01307850	0.5	0	am_hiểu#2 biết#3	hiểu biết thông tin đầy đủ, "một nhà sưu tập sách hiếm hiểu biết", "ngạc nhiên về sự hiểu biết về những gì đang xảy ra"
-a	01302811	0	0.625	truyền_nhiễm#2	dễ lây lan, "sợ hãi là sự truyền nhiễm; trẻ em bắt chước nó từ người lớn tuổi" Bertrand Russell
-a	01301624	0.625	0	công_nghiệp#2	có ngành_công_nghiệp rất phát_triển , " cuộc cách_mạng công_nghiệp " , " một quốc_gia_công_nghiệp "
-a	01317954	0	0.625	thương#1	bị hại; "thương binh", "thương cảm"
-a	01323207	0.625	0	đề_cao#1 cao_cả#2	chăm sóc để tôn cao, "một bài điếu văn được đề cao", "tư tưởng cao cả"
-a	01475831	0.5	0.125	nam_tính#1 tánh chất đàn_ông#1 dũng_cảm#1	sở hữu phẩm chất phù hợp của một người đàn ông; "anh ta thật là nam tính"
-a	01474513	0.625	0	quản_lý#1	có khả năng được quản lý hoặc kiểm soát; "phải quản lý ra trò chứ!"
-a	01471954	0	0.75	vị thành_niên#1 chưa trưởng_thành#1 thứ#5	chưa đủ tuổi pháp luật; "tuổi vị thành niên"
-a	01470913	0	0.625	không nhiễm_từ#1	không có khả_năng bị từ_hoá; "nhôm không nhiễm từ được"
-a	01174565	0	0.625	sưng#2 sưng lên#2 sưng phù#1 sưng_húp#2 ỏng#1	phình lên bất thường đặc biệt là bởi chất lỏng hoặc khí; "lũ trẻ đói với những cái bụng ỏng", "ông ta có một cái bụng ỏng thô thiển"; "mí mắt căng phồng (hoặc sưng húp)"," bàn tay sưng lên ","  mô sưng phù "," béo ú "
-a	01175298	0	0.75	bị nhọt#1 có nhọt#1	bị đau vì mụn nhọt; "ăn nhiều mật ong sẽ bị nhọt"
-a	01175427	0	0.5	bị sâu#1	 (răng) bị ảnh hưởng bởi sâu răng hoặc sâu răng; "răng bị sâu rất đau"
-a	01197634	0.625	0	cánh_tay_phải#3	hữu ích và đáng tin cậy, "cánh tay phải của tôi"
-a	01204443	0	0.625	không xếp_hạng#1 không có thứ_tự#2 không phân_cấp#2	không xếp theo thứ tự thứ bậc; "họ xếp hàng không có thứ tự nào cả"
-a	01221290	0	0.5	tương_tự#2	tương ứng với chức năng nhưng không có nguồn gốc tiến hóa, "đôi cánh của một con ong và những chim ruồi là tương tự nhau"
-a	01220882	0	0.5	tương_đồng#1 đồng_đẳng#1	tương tự ở nguồn gốc tiến hóa nhưng không phải chức năng; "cặp song sinh tương đồng"
-a	01222884	0	0.875	không_trung_thực#1	lừa đảo hoặc gian lận; xử lý để gian lận hoặc lừa gạt hoặc lừa dối; "những trò lừa lọc đê tiện"
-a	01232298	0	0.75	không_thể giải_khuây#1 không nguôi_ngoai#1	buồn quá đến mức không thểan ủi; không có khả năng an ủi, "không nguôi ngoai khi con trai bà qua đời"
-a	01241065	0	0.5	đứng#3	 (chất lỏng) không di chuyển hoặc chảy; "muỗi sinh sản trong nước đứng"
-a	01243825	0.5	0	hiếu_khách#2	Cư xử với khách và những người xa lạ bằng lòng thân mật và hào phóng, "một người đàn ông tốt bụng và hiếu khách", "một hành động hiếu khách", "lời mời hiếu khách"
-a	01245138	0.25	0.75	có ác_cảm#2 gây ác_cảm#2 đối_lập#2	đặc trưng bởi sự đối kháng hoặc ác cảm, "nô lệ có ác cảm với ông chủ của họ", "các bè phái đối lập trong đảng"
-a	01264179	0	0.625	tàn_nhẫn#2	thiếu sự tử tế và lòng nhân đạo; "Ông là một người tàn nhẫn"
-a	01263445	0.125	0.5	hung_bạo#1 vũ_phu#1 thú_tính#3	giống như một con thú, cho thấy sự thiếu nhạy cảm của con người; "mong muốn bẩn thỉu", "có tính chất thú tính", "bạo lực"; "một người đàn ông ngu si đần độn và bạo tàn", "đối xử tàn bạo với tù nhân"
-a	01265308	0.5	0	đáng cười#1 tức_cười#2 hài_hước#1 vui#2	kích động hoặc gây cười, "một bộ phim thú vị"; " một đồng nghiệp hài hước "," một cái mũ tức cười "," một cái nhìn hài hước bất ngờ "," câu chuyện hài hước đã làm cho tất cả mọi người cười "," một nhà văn rất khôi hài "," nó đã có chuyện vui nếu nó đã không làm tổn thương quá nhiều " ; "một kinh nghiệm vui vẻ"
-a	01272397	0.625	0	nhận_dạng được#1	có khả năng được xác định; "nhân chứng nhận dạng được tên sát nhân"
-a	01273143	0	0.5	vô_định#1	không xác định; "nhìn ra khoảng xa vô định"
-a	01272176	0	0.625	ung_dung#1	không vội vàng tất bật, "thong thả đi bộ quanh dãy nhà", "với một tốc độ ung dung (hay nhàn nhã)"
-a	01273033	0.625	0	có_thể định rõ#1	có khả năng được chỉ định ra; "khiếu nại có thể định rõ"
-a	01274261	0.125	0.625	khiếm#1	yếu trong sức mạnh, chất lượng, hoặc hữu ích; "người khiếm thị"
-a	01274945	0	0.5	suy_yếu#1 hỏng_hóc#1 giảm_sút#1	kết quả của sự làm giảm; "Căn bệnh đã làm cơ thể cô ấy suy yếu"
-a	01746605	0.625	0	có_thể cảm_thấy#1	có khả năng là cảm nhận của giác quan tâm hay, "một cảm quan khập khiễng", "dễ dàng cảm quan", "cảm quan thay đổi hành vi"
-a	01746995	0.625	0	đáng chú_ý#2	có khả năng bị phát hiện; "sau sự tạm dừng đáng chú ý, các giảng viên vẫn tiếp tục"
-a	01747195	0.625	0	có_thể nhận_thấy rõ#2	có khả năng được nhận thức rõ ràng, "một bài luận với một ý nghĩa đó không phải là luôn luôn có thể nhận thấy rõ"
-a	01747996	0.5	0	nhận_biết#1	dễ dàng cảm nhận; dễ dàng để trở thành nhận thức, "tình hình căng thẳng này tạo ra các triệu chứng dễ nhận biết"
-a	01747849	0.5	0	có_thể_quan_sát#1	có khả năng được nhận thức đặc biệt bằng mắt hoặc nghe; "có thể quan sát được qua sương mù"
-a	01746292	0	0.75	mù_quáng#2	không thể hoặc không muốn nhận thức hoặc hiểu, "lỗi lầm mù quáng của người yêu", "hậu quả của những hành động mù quáng của họ"
-a	01748716	0.25	0.625	khó sờ_thấy#3	không thể cảm nhận khi chạm vào, "xung khó sờ thấy"
-a	01749320	0.625	0	hoàn_hảo#1	hoàn toàn tốt và không có khiếm khuyết hay thiếu sót, "một vòng tròn hoàn hảo", "một sao chép hoàn hảo", "hạnh phúc hoàn hảo", "cách cư xử hoàn hảo", "một mẫu hoàn hảo" , "một ngày hoàn hảo"
-a	01750073	0.625	0	trọn_vẹn#13	không có các lỗ hổng hay các khuyết tật hoặc tạp chất, "một viên kim cương hoàn hảo sáng sủa", "làn da sáng sủa của một phụ nữ trẻ khỏe mạnh"
-a	01751201	0.75	0	lý_tưởng#1	phù hợp với một tiêu chuẩn tối hậu của sự hoàn hảo hay xuất sắc, thể hiện một lý tưởng; "anh ta mong ước tìm được người yêu lý tưởng"
-a	01752167	0.125	0.75	không hoàn_hảo#1	không hoàn hảo; lỗi hoặc không đầy đủ; "chỉ có một sự hiểu biết không hoàn hảo của các trách nhiệm của mình", "những con người không hoàn hảo", "hệ thống thoát nước ở đây là không hoàn hảo"
-a	01752953	0	0.5	lỗi#1	có một khiếm khuyết; "Tôi quay trở lại các thiết bị bởi vì nó đã bị lỗi"
-a	01753249	0	0.625	bất_thường#5	thấp dưới tiêu chuẩn của nhà sản xuất "loại vải bất thường"
-a	01753652	0.625	0	phân hủy_sinh_học#1	có khả năng bị phân hủy bởi vi khuẩn như: "một chất tẩy rửa phân hủy sinh học"
-a	01754421	0	0.625	thường_trực#1 kéo_dài#1	tiếp tục hoặc lâu dài mà không thay đổi đáng kể tình trạng hay điều kiện hoặc nơi; "thư ký thường trực Tổng thống", "địa chỉ thường trú", "văn học có giá trị vĩnh viễn"
-a	01761871	0.5	0	được_chấp_nhận#1	xứng đáng được thừa nhận, "bằng chứng  được chấp nhận"
-a	01775420	0	0.75	cách_âm#1	không thể có hoặc không bị xuyên thủng bởi âm thanh, "một căn phòng cách âm"
-a	01774869	0.125	0.625	kháng#3	không bị ảnh hưởng; "kháng với tác động của nhiệt", "kháng với thuyết phục"
-a	01782717	0	0.625	bất_tín#3 vô_thần#1	không tín thần; "họ theo đạo vô thần"
-a	01782519	0.25	0.5	không tín_ngưỡng#1	thiếu đạo đức hay tôn kính đối với một thần; "anh ta và gia đình anh ấy không tín ngưỡng"
-a	01784401	0	0.625	ngoại_đạo#1	không thừa nhận Thiên Chúa của Kitô giáo và Do Thái giáo và Hồi giáo; "Những người ngoại đạo thì làm sao mà hiểu"
-a	01784830	0.625	0	dễ an_ủi#1	dễ dàng bình tĩnh hay bình tâm lại; "Cháu nó là người dễ an ủi"
-a	01785783	0.125	0.625	gay_gắt#1	không có khả năng được giảm thiểu; "những lời buộc tội nghiêm khắc và gay gắt"
-a	01785180	0.	0.675	không_đội_trời chung#1	không có khả năng được hòa giải; là "kẻ thù không đội trời chung"
-a	01800764	0.625	0	đẹp#2	 (thời tiết) rất thú vị; "một ngày đẹp"
-a	01800169	0	0.5	không thuyết_phục#2 không_thể tin#2 không_thể_xảy_ra#2	có một xác suất quá thấp để tạo niềm tin; "Xin lỗi, nhưng những lý luận của anh hoàn toàn không thuyết phục"
-a	01805889	0.125	0.75	không hài_lòng#1	có biểu hiện bất bình; "tôi không hài lòng với thái độ của nó"
-a	01805730	0.5	0	vui_mừng#1	rất vui vì được như mong muốn; "vui mừng trước chiến thắng"
-a	01805801	0.5	0	hài_lòng#1	đã nhận được những gì mong muốn; "Tôi hài lòng trước những thành quả đã đạt được"
-a	01805064	0	0.75	mất_lòng#3	gây khó chịu, "sự thật mất lòng"
-a	01804906	0	0.875	bạc_bẽo#2	khó chịu, "Tôi sẽ không thực hiện công việc bạc bẽo như so sánh các trường hợp thất bại" Abraham Lincoln
-a	01806992	0.375	0.5	cau_mày#1	cho thấy không hài lòng hoặc giận dữ; "cô ta cau mày khó chịu"
-a	01807799	0.875	0	duyên_dáng#1	làm hài lòng, "ưu đãi với cách cư xử duyên dáng", "một ngôi nhà nhỏ duyên dáng", "một nhân cách quyến rũ"
-a	01808227	0.875	0	tuyệt_vời#1 thần kì#1	rất hài lòng, "một kỳ nghỉ tuyệt vời"
-a	01807605	0.875	0	đáng ngưỡng_mộ#2	truyền cảm giác ngưỡng mộ hoặc phê duyệt; "hai trong số rất nhiều phẩm chất đáng ngưỡng mộ của cô là sự rộng lượng và vẻ đẹp thanh lịch"
-a	01807964	0.75	0	thú_vị#1	rất hài lòng hay cảm thấy được giải trí, "một bất ngờ thú vị", "bộ phim hài là thú vị", "một trò đùa thú vị"
-a	01808671	0.875	0	ngọt_ngào#4	khiến các giác quan cảm thấy dễ chịu; "những bài hát ngọt ngào của chim sơn ca", "bộ mặt ngọt ngào của một đứa trẻ"
-a	01813081	0	0.75	thô#8	chưa tôi luyện và chưa tinh chế, "khoáng sản thô", "vẻ đẹp thô"
-a	01813920	0.5	0	khôn_ngoan#2	khéo léo trong quản lý, "một chính khách sắc sảo và khôn ngoan"
-a	01814085	0.125	0.625	thất_sách#1	không chính trị, "một cách tiếp cận thất sách đến một vấn đề nhạy cảm"
-a	01817908	0.75	0.125	lạc_quan#2	hy vọng tốt nhất, "một quan điểm lạc quan"
-a	01819692	0.625	0.125	dương#9	lớn hơn số không, "số dương"
-a	01821266	0.5	0	có_thể#1	có khả năng xảy ra hoặc hiện tại, "một bước đột phá có thể có vào năm tới", "bất cứ điều gì có thể", "cảnh báo về hậu quả có thể"
-a	01823574	0	0.75	không_thể thực_hiện#1 không khả_thi#1	không có khả năng được thực hiện hoặc đưa vào thực hiện; "việc trục vớt tàu chìm đắm đã chứng minh là không thể thực hiện vì sự mong manh của nó", "một cuộc cải cách đề nghị là không khả thi trong hoàn cảnh hiện hành "
-a	01824081	0	0.625	không_thể làm#1 thể hoàn tác#1 không_thể đạt được#1	không thể đạt được, "một mục tiêu không thể đạt được"
-a	01829652	0.5	0	cao_thế#1	bị hoặc có khả năng hoạt động với điện áp tương đối cao, "dây điện cao thế"
-a	01828836	0.5	0	công_suất cao#2	(sử dụng kính hiển vi) có khả năng phóng đại cao, "một kính hiển vi công suất cao"
-a	01889819	0.125	0.375	tự_cao#1 tự_phụ#2 kiêu_ngạo#1	có hoặc hiển thị cảm xúc của ra tầm quan trọng không có cơ sở của niềm tự hào hách dịch, "một quan chức ngạo mạn", "ngạo mạn tuyên bố", "vẻ tự phụ như một con công"
-a	01842001	0	0.625	không_thể đoán_trước#1	không có khả năng được báo trước; "thời tiết này đúng là không thể đoán trước"
-a	01842304	0.125	0.625	quái_đản#1 thất_thường#1	thay đổi, "một làn gió mùa hè thất thường", "thời tiết quái đản"
-a	01847672	0.125	0.625	vắng_mặt#1	không có mặt; "Không được vắng mặt trong buổi họp đầu năm"
-a	01848701	0.5	0	gây chú_ý#2	đánh dấu bằng sự phô trương nhưng thường vô vị, "một vòng đeo tay giá rẻ bằng đá giả sặc sỡ", "một nửa trang quảng cáo gây chú ý"
-a	01871774	0.75	0	sinh_lợi#2 lời_lãi#1	tạo ra lợi nhuận lớn, "một doanh nghiệp sinh lợi"
-a	01880071	0.75	0	chính_đáng#2	thích hợp hoặc hợp pháp; "Những nhu cầu chính đáng"
-a	01875227	0	0.5	nông_cạn#3	thiếu chiều sâu của trí tuệ hay kiến thức, có liên quan chỉ với những gì là hiển nhiên, "người nông cạn", "lập luận của ông dường như rất nông cạn và tẻ nhạt"
-a	01883106	0.125	0.675	điềm_báo#2 điềm gở#2	lời tiên tri đáng ngại; "2012 là một điềm báo đáng ngại"
-a	01880918	0.125	0.75	không thuận_tiện#1 không hợp lễ#1 vô_duyên#1 không lịch_sự#2 không đứng_đắn#1	không đúng tiêu chuẩn được chấp nhận của những gì là đúng hoặc phù hợp trong xã hội lịch sự, "đã được chôn với sự vội vàng không đứng đắn" , "hành vi không lịch sự", "ngôn ngữ không thích hợp cho một phụ nữ", "không hợp lệ để sử dụng những hành vi thô tục", "di chuyển để hạn chế sự không thuận tiện với lời lẽ thô lỗ của họ"
-a	01885866	0.625	0	bảo_vệ#1	 (sử dụng đặc biệt là máy móc) được bảo vệ bởi lá chắn để ngăn ngừa chấn thương; "hệ thống bảo vệ của tòa nhà"
-a	01883226	0	0.5	báo_trước#1 cảnh_báo#1	cảnh báo về bất hạnh trong tương lai; "Hãy nghe lời cảnh báo của đôi mắt"
-a	01884930	0	0.75	được bảo_vệ#1	được giữ an toàn hoặc bảo vệ khỏi nguy hiểm hay thương tích hay thiệt hại; "tại chỗ được bảo vệ tốt nhất mà tôi có thể tìm thấy"
-a	01892433	0.5	0.125	quá tự_hào#1	kiêu ngạo; "đừng quá tự hào vì những gì mình đã có"
-a	01893510	0.75	0	khiêm_tốn#6 nhu_mì#1	khiêm tốn trong tinh thần hoặc tính cách; cho thấy sự hòa nhã hoặc dễ bảo thậm chí sợ hãi, "hiền lành và nhu mì"
-a	01899360	0.25	0.625	thiếu thận_trọng#1	không thận trọng hay khôn ngoan, "sự thiếu thận trọng của mẹ cô khuyến khích cô trong những ý tưởng ngớ ngẩn lãng mạn", "sẽ là thiếu thận trọng cho một người không biết gì về kinh tế khi nói về các chi tiết của chính sách kinh tế" AMSchlesinger
-a	01902313	0	0.625	không_được giáo_dục#2	không chịu sửa chữa, kỷ luật; "để cho con lớn lên mà không được giáo dục"
-a	01904596	0	0.625	vô_giáo_dục#2	giống kém hoặc hỗn hợp, "một con chó vô giáo dục"
-a	01905377	0	0.625	không trong_sạch#2	 (sử dụng của người hoặc hành vi) vô đạo đức hoặc khiêu dâm, "tư tưởng không trong sạch"
-a	01907103	0.125	0.875	không pha_trộn#1 không bị trộn_lẫn#1	chưa pha trộn với các yếu tố không liên quan; "nước thô (nước lã)", "rượu nguyên chất", "không phải là một phước lành không pha trộn"
-a	01911415	0	0.625	không đủ_tiêu_chuẩn#2	không đáp ứng các tiêu chuẩn thích hợp và các yêu cầu và đào tạo; "Em ấy không đủ tiêu chuẩn để qua kì thi"
-a	01913089	0	0.625	vô_kỷ_luật#1	không có kỷ luật; "một tài năng vô kỷ luật"
-a	01913642	0.125	0.5	bị biến_đổi#2	thay đổi hoặc làm cho thay đổi thành khác trước ; "sắc mặt của nó bị biến đổi"
-a	01915745	0.625	0	định_lượng được#1	có khả năng được định lượng; "Số dữ liệu này có thể định lượng được"
-a	01914521	0.5	0	chất_lượng#1	liên quan đến phân biệt dựa trên phẩm chất, "thay đổi về chất", "chất lượng dữ liệu", "chất lượng phân tích xác định thành phần hóa học của một chất hoặc hỗn hợp"
-a	01925242	0.5	0	chủ_tâm#1	có hoặc hiển thị hoặc hành động với một mục đích, thiết kế, "hành vi chủ tâm"
-a	01925708	0.75	0	minh_mẫn#3	có khả năng suy nghĩ và thể hiện bản thân một cách rõ ràng và nhất quán; "một nhà tư tưởng sáng suốt", "cô ấy đã minh mẫn hơn so với trước khi bị tai nạn"
-a	01926654	0	0.5	vô_lý#1	không dựa trên lý do hoặc chứng cứ; "hận thù vô lý", "đức tin mù quáng", "hoảng loạn vô lý"
-a	01935744	0.25	0.25	huyền_thoại#2 truyền_thuyết#1	diễn ra trong huyền thoại hay truyền thuyết, "huyền thoại Paul Bunyan và con trâu xanh", "huyền thoại khai thác của Jesse James"
-a	01941999	0	0.75	không thực_tế#1	không thực tế, "mong đợi không thực tế", "giá cao ở mức không thực tế"
-a	01945010	0	0.5	không có cơ_sở#1 không_thể biện_minh#1	 (trong lý thuyết, vv) không có khả năng được bảo vệ hay biện minh; "Những lời buộc tội không có cơ sở"
-a	01953467	0	0.75	chưa tinh_chế#1 chưa qua chế_biến#3	chưa tinh chế hoặc chế biến; "quặng chưa tinh chế", "dầu thô"
-a	01953297	0.5	0.25	tinh#2	giải thoát khỏi các tạp chất bằng cách xử lý; "đường tinh luyện", "tinh dầu", "để mạ tinh chế vàng" Shakespeare
-a	01956855	0	0.5	mất#5	không có khả năng thu hồi hoặc lấy lại; "mất danh dự"
-a	01982646	0.875	0	uy_tín#1	có một danh tiếng tốt, "một doanh nghiệp có uy tín", "một nhà khoa học có uy tín", "một loại rượu có uy tín"
-a	01982957	0.75	0	vinh_dự#1 quý#1	có một danh tiếng lẫy lừng, được tôn trọng, "nhà lãnh đạo đáng kính của chúng tôi", "một tác giả có uy tín"
-a	01984097	0.25	0.625	không xứng_đáng#1	mất uy tín; đáng trách; "nhãn hiệu của ông đã không không xứng đáng ở tất cả các mặt"
-a	01987093	0	0.75	thù_địch#3	không thể đưa vào hiệp định thân thiện, "các phe phái thù địch"
-a	01995288	0	0.625	xúc_phạm#1	thể hiện sự khinh thường; "Tôi khinh!"
-a	01997910	0	0.5	vô_trách_nhiệm#1	thể hiện sự thiếu quan tâm về hậu quả, "cư xử như một thằng ngốc vô trách nhiệm", "hành động vội vàng và thiếu trách nhiệm"
-a	01999766	0	0.75	không phản_hồi#1	không đáp ứng với một số ảnh hưởng hoặc kích thích kinh tế; "Chính sách của ông ấy đã không phản hồi lại kết quả như ý"
-a	01998535	0.125	0.5	vô_công rồi nghề#1	đặc trưng bởi không có khả năng hoặc không sẵn sàng để làm việc hướng tới mục tiêu một hoặc chịu trách nhiệm, "một chính phủ vô công rồi nghề"
-a	02001596	0	0.625	bất_trị#1 không_thể kiềm_chế#1 không bị kiểm_soát#1 không bị ngăn_chặn#1	không hạn chế hoặc kiểm soát, "cơn giận dữ không kiềm chế", "một cơn giận không được kiểm soát", "cơn thịnh nộ bất trị"
-a	02012504	0	0.5	bất_kính#1	hiện sự thiếu tôn trọng hay tôn kính do, "học giả bất kính chế giễu những điều thiêng liêng", "khách du lịch ồn ào bất kính"
-a	02014611	0	0.625	không_được đánh_thức#1	không thức tỉnh hoặc kích hoạt; "cảm xúc không được đánh thức"
-a	02015403	0	0.625	phản#2	đánh dấu bởi sự phản đối hoặc ác cảm với cách mạng; "tẩy chay cho khuynh hướng phản cách mạng của mình"
-a	02025885	0	0.625	thuộc khu ổ_chuột#1	 (trong nhà ở, khu dân cư) mang tính đói nghèo; "khu ổ chuột của thị xã", "điều kiện khu ổ chuột"
-a	02036934	0.75	0	thẳng_thắn#2 đứng_đắn#4	xuất sắc về đạo đức, "một người thực sự tốt", "một nguyên nhân đứng đắn", "một người đàn ông thẳng thắn và đáng kính"
-a	02038891	0.5	0.125	thép#1 đanh_thép#1	cực kỳ mạnh mẽ, "một hiến pháp đanh thép"
-a	02038994	0.5	0.25	mập_mạp#3 cứng_cỏi#1	có sức mạnh chắc chắn về thể chất; không sợ mệt mỏi hay khó khăn; "dũng cảm thám hiểm ở miền Bắc Canada", "cô ta rất tự hào về đứa con trai mạnh mẽ của mình"; "người thủy thủ mập mạp "," các vận động viên trẻ săn chắc "
-a	02040049	0	0.625	yếu_đuối#1	thể chất yếu, "một cơ thể yếu đuối bất thường"
-a	02086879	0	0.5	chưa mở#1	không được mở hoặc niêm phong; "chưa mở quà Giáng sinh"
-a	02085898	0	0.625	vô_nguyên_tắc#1	mà không có kỷ luật hoặc nguyên tắc, "những nhà chính trị vô nguyên tắc sẽ bán ... đất nước của họ để đạt được quyền lực"
-a	02086356	0	0.75	vô_lương_tâm#1	không có lương tâm; "Anh là đồ vô lương tâm"
-a	02093888	0.5	0.25	an_toàn#2	không có các mối nguy hiểm hoặc rủi ro; "tài sản của ông đã được an toàn", "làm một nơi an toàn cho mình trong lĩnh vực của mình"
-a	02094514	0.75	0	bảo_đảm#1	bảo đảm không để thất bại, "một công thức bảo đảm cho bánh phồng pho mát"
-a	02095037	0	0.75	run#3 bấp_bênh#3	không an toàn bao vây với những khó khăn, "một cuộc hôn nhân bấp bênh"
-a	02096213	0	0.5	tháo#1	không phải đóng hoặc bảo đảm; "cửa xe đã được tháo", "tháo dây an toàn"
-a	02096923	0.625	0	bảo_hiểm#1	có khả năng được bảo hiểm hoặc đủ điều kiện để được bảo hiểm; "Anh ta được bảo hiểm trong mọi lần tai nạn"
-a	02100566	0.625	0	cấp_trên#6 hạng_sang#1	có một thứ hạng cao hơn, "viên chức cao cấp"
-a	02099651	0.5	0	chia_sẻ#1	cách không ích kỷ sẵn sàng chia sẻ với người khác, "một người bạn ấm áp và chia sẻ"
-a	02102796	0	0.5	vô_cảm#1	không có khả năng cảm giác thể chất, "vô cảm với nỗi đau", "trái đất vô cảm"
-a	02103052	0.125	0.75	gây_mê#2	đặc trưng bởi bất tỉnh nhân sự, "các cô gái trẻ đang ở trong một nhà nước sở hữu bị mù và điếc và bị gây mê", "một nhà nước bị gây mê"
-a	02104277	0.5	0	kích_thích#3 dễ bị kích_thích#2	có khả năng đáp ứng với các kích thích; "Anh ta là người dễ bị kích thích"
-a	01001689	0.625	0	màu_mỡ#1	giàu chất dinh dưỡng, thuận lợi cho cây trồng phát triển ; "đất đai màu mỡ"
-a	01002055	0.5	0	dồi_dào#1	rất nhiều, đến mức cần bao nhiêu cũng có đủ ; "sức khỏe dồi dào"
-a	01005675	0	0.625	chưa hoàn_thành#1	không đưa đến tình trạng cuối cùng mong muốn; "công việc chưa hoàn thành"
-a	01006967	0	0.625	bị cạn_kiệt#2	có khả năng được sử dụng hết, có khả năng bị cạn kiệt; "Chúng tôi bị cạn kiệt nhiên liệu hóa thạch dự trữ"
-a	01007258	0	0.625	hạn#7	quy định thời gian cho một công việc nào đó ; "hạn cho 3 ngày phải xong"
-a	01007354	0.125	0.5	vô_hạn#1	không có giới hạn hay ranh giới trong thời gian hay không gian hoặc mức độ hay cường độ; "sự ngây thơ vô hạn của con người", "sự giàu có vô hạn"
-a	01016874	0.5	0	phân_hạch#1	vỡ ra, thường thành hai mảnh lớn; "một phân hạch nucleous", "vật liệu phân hạch"
-a	01017161	0	0.75	phù_hợp với#3	chất và tinh thần âm thanh hoặc khỏe mạnh; "cảm thấy thoải mái và phù hợp sau khi kỳ nghỉ của họ", "giữ cho phù hợp với chế độ ăn uống và tập thể dục"
-a	01017738	0.75	0.25	không thích_hợp#2	không ở trong tình trạng thể chất hoặc tinh thần tốt, trong điều kiện;"áo xanh không thích hợp với quần đỏ"
-a	01019283	0	0.75	tàn_tật#1 khuyết_tật#1	không có khả năng hoạt động như một hệ quả của chấn thương hay bệnh tật; "những em bé khuyết tật rất đáng thương"
-a	01040544	0.125	0.5	dai_dẳng#2 ám_ảnh#1	liên tục theo định kỳ để tâm; "ký ức ám ảnh", "cơ quan các nhà thờ và những tiếng nói xa xôi có một vẻ đẹp ám ảnh" Claudia Cassidy
-a	01041481	0	0.75	không_hề khoan_nhượng#1	không muốn hoặc không thể tha thứ hoặc hiện lòng thương xót; "một người phụ nữ không hề khoan nhượng cho lỗi lầm của chồng"
-a	01048587	0.5	0	ngẫu_nhiên#2	tình cờ sinh ra, xảy ra chứ không phải do những nguyên nhân bên trong quyết định ; "sự trùng hợp ngẫu nhiên"
-a	01050088	0	0.75	định_mệnh#3	số mệnh của con người, do một lực lượng huyền bí định sẵn, không thể cưỡng lại được, theo quan niệm duy tâm ; "cưỡng lại định mệnh"
-a	01052248	0.5	0	thơm#1	mùi dễ chịu; "quả thị thật thơm"
-a	01053634	0	0.75	mùi_hôi_thối#2	có mùi hôi, thối và bẩn ; "một mùi hôi thối bốc lên trong bếp";
-a	01053915	0	0.875	mốc#2	có mốc làm cho bẩn hoặc kém phẩm chất ; "gạo mốc"
-a	01054367	0	0.75	hôi#1	có mùi khó ngửi như mùi bọ xít, chuột chù ; "người hôi như cú"
-a	01054630	0	0.7	mùi_thối#1	có mùi khó ngửi như mùi phân tươi hoặc mùi xác chết lâu ngày ; "có mùi thối sau bếp"
-a	01054630	0	0.7	thối#1	có mùi khó ngửi như mùi phân tươi hoặc mùi xác chết lâu ngày ; "có mùi thối sau bếp"
-a	01056802	0.75	0	mùi dễ_chịu#1	cảm giác dễ ngửi, thoái mái ;"mùi hoa hồng là mùi dễ chịu"
-a	01058756	0	0.625	ràng_buộc#3	đặt trong tình thế có những điều bắt buộc phải làm, trong quan hệ với người khác, khiến cho hành động mất tự do; "người phụ nữ ngày xưa bị lễ giáo ràng buộc"
-a	01060785	0.125	0.625	không cố_định#1	không chắc chắn được đặt hoặc thiết lập hoặc gắn chặt; "cái bàn không cố định"
-a	01063958	0	0.625	không bị cản_trở#2	không được tổ chức trong kiểm tra hoặc chịu sự kiểm soát; "không bị cản trở phổ biến tin tức", "điều này sẽ cung cấp cho người da đen có cơ hội để sống không bị cản trở bởi phân biệt chủng tộc"
-a	01064167	0.5	0	không hạn_chế#2	miễn phí các hạn chế về việc thực hiện; "Tôi đã không bị hạn chế truy cập"
-a	01064286	0	0.75	không tự_do#2	bị cản trở và không thể hành động theo ý muốn; "tôi không thích cuộc sống không tự do"
-a	01067193	0	0.625	không thường_xuyên#1	không xảy ra đều đặn, có lịch trình trong khoảng thời gian ngắn; "nó đi làm không thường xuyên"
-a	01069283	0	0.75	hư_hỏng#2	hỏng, không dùng được nữa ; "thịt xấu", "cô con gái hư hỏng"
-a	01071198	0.625	0	tươi#5	không đóng hộp hoặc bảo quản cách khác; "rau tươi"
-a	01075178	0.625	0	vui_tính#1	có tính luôn luôn vui vẻ, hay gây cười ; " một chủ nhà vui tính "
-a	01076435	0.625	0	láng_giềng#1	thể hiện quan hệ thân thiết, người ở nhà bên cạnh, trong quan hệ với nhau ; "hàng xóm láng giềng"
-a	01076793	0	0.75	không thân_thiện#2	không đối xử hòa nhã với bạn bè hoặc thân thiện; "họ là những người không thân thiện"
-a	01077263	0.125	0.625	lạnh#3	thiếu cảm giác ấm áp, thân thiện ; "một gương mặt lạnh"
-a	01078673	0	0.5	tê_buốt#1	thường do lạnh hoặc đóng băng một phần; "tê buốt ngón tay"
-a	01080197	0	0.5	tan#2	không còn đông lạnh; "tan đá"
-a	01080297	0.5	0	hiệu_quả#1	sản xuất hoặc lợi cho sản xuất trong sự phong phú; "phương pháp có hiệu quả"
-a	01087093	0	0.5	trắng#8	 (của một bề mặt) không được viết hoặc in trên; "trang trắng"
-a	01087977	0	0.5	trống#2	mà không có một người cư ngụ hoặc đương nhiệm; "ngai vàng không bao giờ bỏ trống"
-a	01114658	0.5	0	hào_hùng#2	có khí thế mạnh mẽ và sôi nổi ; "lời văn hào hùng"
-a	01115349	0.636	0	chính_hãng#1	không giả, giả mạo; "một sản phẩm Picasso chính hãng"
-a	01115635	0.6	0.4	thực_sự#1 xác_thực#2	không giả, sao chép; "một chữ ký xác thực"
-a	01116380	0	0.556	giả#1	không chính hãng, bắt chước một cái gì đó cấp trên; "giả cảm xúc", "tiền giả", "giả mạo tác phẩm nghệ thuật", "một hoàng tử giả"
-a	01117226	0	0.75	giả_mạo#1	sao chép gian lận; " một tờ hai mươi đô la giả mạo "
-a	01120925	0.625	0.25	vinh_quang#1	có hoặc xứng đáng hoặc trao vinh quang; "một sự nghiệp lâu dài và vẻ vang"
-a	01121238	0.625	0.125	sáng#6	thời kỳ thịnh vượng, nổi bật; "một điểm sáng trong lịch sử"
-a	01121757	0.625	0	siêu#1	học rất giỏi; "cô ấy học rất siêu"
-a	01126291	0	0.875	không_kể_xiết#2	cao trào của cảm xúc; "nỗi đau không kể xiết"
-a	01127147	0	0.875	sợ_hãi#	vô cùng đau buồn; "một sai lầm khủng khiếp"
-a	01127302	0	0.625	khó_khăn#8	khó, có nhiều trở ngại hoặc thiếu thốn; "cuộc sống khó khăn"
-a	01127661	0	0.875	cực_xấu#1	rất xấu; "cái áo cực xấu"
-a	01127782	0	0.75	bốc_mùi_hôi_thối#2	mùi khó chịu; "trong bếp bốc mùi hôi thối"
-a	01129533	0	0.875	không_biết xấu_hổ#1	không ngại ngùng, e dè khi làm sai việc gì đó; "cô ta không biết xấu hổ là gì"
-a	01130261	0.625	0	thánh_thiện#1	trong sáng, nhân từ ; "một gương mặt thánh thiện"
-a	01130733	0.625	0	tiết_kiệm#1	dành dụm được do chi tiêu đúng mức ; "cô ấy sống rất tiết kiệm"
-a	01130932	0.75	0	trong trắng#7	nhân từ, không có mục đích hiểm độc; "đó là sự trong trắng của bạn"
-a	01131454	0	0.875	dã_man#1	kinh hoàng hay độc ác tàn bạo; "giết người là một tội ác dã man"
-a	01131935	0	0.75	nham_hiểm#2	xuất phát từ đặc điểm xấu hay bản tính thâm độc, đê tiện; "một hành động nham hiểm"
-a	01132366	0.333	0.667	tham_nhũng#1	lợi dụng quyền hành để tham ô và nhũng nhiễu dân ; "bại trừ tệ nạn tham nhũng"
-a	01132515	0.125	0.875	xấu_xa#2	cực kỳ xấu xa hay độc ác; "một con người độc ác xấu xa"
-a	01137378	0.25	0.625	ủ_rũ#1	buồn rầu đến mức như rũ xuống, không còn hơi sức nữa ; "ngồi ủ rũ một xó"
-a	01137994	0	0.625	hờn_dỗi#1	có điều không bằng lòng và biểu lộ ra bằng thái độ làm như không cần đến nữa, không thiết nữa; "tính hay hờn dỗi"
-a	01140188	0.125	0.5	yểu_điệu#1	có dáng người mềm mại, thướt tha ; "cô gái có dáng người yểu điệu"
-a	01161233	0	0.875	vu_khống bôi_nhọ#1	có hại và thường không đúng sự thật;"cô ấy vu khống bôi nhọ danh dự của tôi"
-a	01161635	0	0.75	gây tác_hại#1 thảm_họa#1	gây tác hại xấu, nguy hiểm; "đó đúng là một thảm họa"
-a	01162633	0	0.625	tinh_nghịch#2	hay đùa nghịch một cách tinh ranh, láu lỉnh ; "bản tính tinh nghịch của cô ấy gây ra những tin đồn sai lầm"
-a	01167540	0.625	0.125	phục_hồi#2	thúc đẩy phục hồi sức khoẻ; "bà ta phục hồi sức khỏe nhanh chóng"
-a	01170136	0.5	0	hạ_sốt#1	ngăn ngừa hoặc giảm sốt; "em bé đã hạ sốt"
-a	01182747	0	0.625	khó_tiêu#1	tiêu hóa khó khăn; "ăn linh tinh dẫn đến khó tiêu"
-a	01182974	0	0.5	kiêu_căng#1	tự cho mình hơn người nên xem thường người khác một cách lộ liễu, khiến người ta khó chịu ; "thái độ kiêu căng"
-a	01248713	0.625	0.25	sốt_sắng#2	tỏ ra quan tâm và tích cực muốn được làm ngay, thực hiện ngay một công việc nào đó ; "sốt sắng với công việc chung"
-a	01262611	0	0.75	vô_nhân_đạo#1	tàn ác, dã man, không có chút gì lòng thương yêu, quý trọng con người ; "hành động vô nhân đạo"
-a	01271700	0	0.75	thong_thả#1	thoải mái và nhàn nhã, không có vội vàng hay vội vàng; "người đi đường một cách thong thả", "một bước đi thong thả", "nói bằng một giọng bình tĩnh và thong thả"
-a	01272176	0	0.625	nhàn_nhã#1	rỗi rãi, nhàn cả về thể xác lẫn tinh thần; "cô ta thật nhàn nhã"
-a	01268002	0.625	0	khôi_hài#1	có tác dụng làm cho cảm thấy thú vị, buồn cười ; "câu chuyện khôi hài"
-a	01268194	0.5	0	dí_dỏm#1	có tác dụng gây vui, gây cười một cách nhẹ nhõm và có ý vị ; "câu pha trò dí dỏm"
-a	01273316	0	0.625	khó nắm_bắt#1	khó mường tượng, khó diễn tả một cái gì đó; "mùi lạ khó nắm bắt đó là mùi gì"
-a	02105898	0	0.625	trơ#2	không phản ứng với kích thích; "Khí trơ"
-a	02107634	0	0.5	đần_độn#10	khựng lại trong phản ứng hoặc nhạy cảm, "một cái nhìn ngu si đần độn", "quá kiệt sức, cô đã trở nên đần độn với những gì đã đi về về cô ấy" Willa Cather
-a	02108198	0	0.5	nhạy#1	làm cho dễ bị nhạy cảm với một trong hai kích thích vật lý hay cảm xúc; "Làn da nhạy với thời tiết"
-a	02108547	0	0.5	tê_tái#1	gây tê hoặc vô hồn, "đau buồn đến tê tái"
-a	02114190	0	0.5	bị áp xe#1	nhiễm và chứa đầy mủ; "một chiếc răng bị áp xe"
-a	02114483	0.25	0.5	làm nhiễm#1	làm không tinh khiết do tiếp xúc hoặc trộn; "Làm nhiễm xạ hóa chất"
-a	02115034	0	0.625	thối_rữa#1 thối_nát#1	gây ra hoặc thúc đẩy sự thối rữa vi khuẩn; "Xác chết thối rữa"
-a	02115324	0.75	0	khử_trùng#1	kỹ sạch sẽ, không có sinh vật gây bệnh, "bác sĩ trong áo khoác màu xanh lá cây có chất khử trùng", "các tác dụng khử trùng của rượu", "người ta nói kinh giới có chất khử trùng "
-a	02116473	0.625	0	không bị nhiễm_bệnh#1	miễn phí từ nhiễm trùng huyết hoặc nhiễm trùng; "một vết thương sạch (hoặc không bị nhiễm bệnh)"
-a	02116618	0.625	0	vô_trùng#1	miễn phí từ các vi trùng hoặc sinh vật gây bệnh, vô trùng, "một môi trường vô trùng"
-a	02120458	0	0.75	phù_phiếm#1	không nghiêm trọng trong nội dung hoặc thái độ hay hành vi, "một cuốn tiểu thuyết phù phiếm", "một nhận xét phù phiếm", "một phụ nữ trẻ phù phiếm"
-a	02121859	0.625	0	vui_tươi#1	đầy đủ tinh thần vui vẻ và cao, "trẻ em vui tươi khi được thả lỏng từ trường học"
-a	02123007	0.125	0.5	nhõng_nhẽo#1	vui tươi sinh động giống như một con mèo con; "Tôi yêu những cô bé hay nhõng nhẽo"
-a	02131072	0.625	0	gợi_cảm#1	đánh dấu bằng hoặc xu hướng khơi dậy ham muốn tình dục hoặc quan tâm, "cảm thấy gợi cảm", "quần áo gợi cảm", "một cuốn sách gợi cảm"
-a	02135138	0.5	0.125	lãnh_cảm#3	không bị hấp dẫn bởi tình dục; "Cô ta bị lãnh cảm"
-a	02138659	0.75	0	cân_đối#1	có một hình dạng cân đối và hài lòng, "một vòng eo thon và đôi chân cân đối"
-a	02152985	0	0.75	độc_quyền#1 duy_nhất#1	không chia, chia sẻ với người khác, "họ đã sử dụng độc quyền máy tính", "quyền duy nhất của ấn phẩm"
-a	02164050	0.5	0	tác_dụng#3	hiệu quả; sản xuất một hiệu quả mong muốn; "tác dụng của lực từ"
-a	02175980	0.5	0.375	không phức_tạp#2 không biến_chứng#1	thiếu phức tạp, "chiếc xe nhỏ và không phức tạp cho những người thực sự quan tâm đến xe hơi", "một chiếc máy không phức tạp"
-a	02179279	0.625	0	chân_thành#1	mở và chân thật, không gian dối, "ông là một người đàn ông tốt, tử tế và chân thành", "cảm thấy hối tiếc chân thành rằng họ đã để lại", "tình bạn chân thành"
-a	02226162	0.625	0	thành_thạo#1 tập#1 chuyên_gia#1 chuyên_nghiệp#1	có hay thấy kiến thức và kỹ năng và năng khiếu, "chuyên nghiệp trong thủ công mỹ nghệ", "một trò tung hứng chuyên nghiệp" , "một công việc chuyên môn", "một thợ cơ khí tốt", "một người bắn giỏi thực hành", "một kỹ sư thành thạo", "ít người nổi tiếng nhưng không ít nhà soạn nhạc tài năng", "hiệu lực đã được thực hiện bằng cách chỉnh sửa khéo léo"
-a	02227344	0.75	0	tinh_tế#2	đánh dấu bằng kỹ năng tuyệt vời nhất là trong kỹ thuật tỉ mỉ, "sự tinh tế của một bác sĩ phẫu thuật"
-a	02233799	0.5	0	siêu_mịn#1	kích thước hoặc kết cấu cực kỳ nhỏ; "đường siêu mịn", "một tập tin siêu mịn"
-a	02233927	0	0.5	khói#1	đánh dấu bằng hoặc phát ra hoặc đầy khói, "khói xà", "khói ống khói", "một lò lửa khói", "một hành lang khói"
-a	02234673	0.5	0	khói thuốc#1	liên quan đến việc hút thuốc lá, "khói thuốc văn phòng và nhà hàng"
-a	02272305	0.5	0	cả_tin#2	cho thấy một thiếu kinh nghiệm, "vì vậy ông tin tất cả mọi thứ ông đọc được"
-a	02275412	0.75	0	kiên_cố#5	chất lượng tốt và điều kiện, xây dựng kiên cố; "một nền tảng vững chắc", "một số tòa nhà gỗ kiên cố"
-a	02277182	0	0.5	không bão hòa#1	không có sự bão hòa; "chất béo không bão hòa"
-a	02278939	0.5	0	tinh_thần#1	hiển thị hình ảnh động, sức sống, hoặc sinh động; "tinh thần yêu nước bất khuất"
-a	02280821	0.5	0.125	lanh_lợi#1	đầy đủ tinh thần và sức sống, "một cô gái trẻ vui vẻ", "một điệu nhảy vui vẻ"
-a	02282171	0.5	0.125	nhẫn_tâm#2	không có các can đảm hay sự nhiệt tình; "Anh thật nhẫn tâm"
-a	02292797	0.5	0	rung_rinh#2 loạng_choạng#1 run_rẩy#1 ọp_ẹp#1	xu hướng lắc từ sự yếu kém hoặc khuyết tật; "một cái bàn ọp ẹp", "chiếc ghế lung lay với đôi chân run rẩy", "cảm thấy một cái thang chút lung lay "," cây cầu vẫn đứng mặc dù một trong những vòm là rung rinh "
-a	01245889	0.125	0.5	đối_đầu#1	đặc trưng bởi sự phản đối trực tiếp, "một cuộc đối đầu"
-a	01246579	0.875	0	thân_thiện#1	đặc trưng bởi tình hữu nghị và thiện chí; "Người Lào khá thân thiện"
-a	02786473	0	0.5	dại#1	bị nhiễm bệnh dại; "chó dại"
-a	03043482	0	0.75	sự_chống_đối Do Thái#1 chống Do Thái#1	liên quan đến hay đặc trưng bởi chống Do Thái; ghét người Do Thái; "các cuộc biểu tình thường bắt nguồn từ sự chống đối Do Thái"
-a	03090612	0	0.5	suy_nhược thần_kinh#1	trong hoặc liên quan đến hoặc bị suy nhược thần kinh; " xu hướng suy nhược thần kinh"
-a	03105742	0	0.5	sốt#1	có, gây sốt; "người sốt không nên ra trời gió"
-a	03062754	0.75	0	công_tước#1	của hoặc thuộc về hoặc thích hợp cho một công tước, "công tước cung điện"
-a	02976525	0	0.5	thần_kinh#1	đặc trưng của hoặc bị ảnh hưởng bởi thần kinh; "rối loạn thần kinh", "triệu chứng thần kinh"
-a	02987017	0.5	0	gây đột_biến#1	có khả năng gây đột biến (sử dụng chủ yếu của các yếu tố ngoại bào chẳng hạn như X quang, gây ô nhiễm hóa học); "các tế bào gây đột biến"
-a	02799797	0	0.5	lác_mắt#1	bị ảnh hưởng bởi lác; "nhìn lác mắt"
-a	02783646	0	0.5	tiền ung_thư#1	của hoặc liên quan đến một sự tăng trưởng đó không phải là ác tính nhưng có thể sẽ trở thành như vậy nếu không được điều trị; "Cô ấy mới ở giai đoạn tiền ung thư, nhưng vẫn có thể nguy hiểm nếu không điều trị"
-a	02776576	0.625	0	thực_ bào#1	có khả năng hoạt động như một thực bào; "thực bào tế bào máu"
-v	01826498	0.875	0	thích#1	như tốt đẹp hơn; giá trị cao hơn, "Một số người thích cắm trại hơn là ở trong khách sạn", "Chúng tôi thích ngủ bên ngoài"
-v	01824736	0.125	0	ước#2 quan_tâm#3	thích hoặc ước làm điều gì đó; "Bạn có quan tâm tới việc thử chiếc đĩa này không?"; "Bạn có muốn đi với tôi và xem phim?"
-v	02751055	0	0.625	giao điểm#2	có ít nhất ba điểm chung với; "giao điểm của ba mặt"
-v	02748627	0.875	0	tốt#31	phù hợp với, "gỗ làm đồ nội thất tốt"
-v	02740204	0.125	0.625	do dự#2 ngập_ngừng#1	là không chắc chắn hay yếu, "sự nhiệt tình của họ là do dự"
-v	02500619	0.125	0.625	nạn_nhân#2 nạn_nhân#2	trừng phạt bất công; "Tôi không muốn là nạn nhân, tôi không có tội"
-v	02500775	0	0.5	tai_họa#1	trừng phạt nặng nề; "Tai họa đã giáng xuống đầu ông ấy"
-v	02507736	0	0.875	rắc_rối#2 sự_bất_tiện#1 bất tiện#1 xúc phạm#1 phiền#3	gây ra sự bất tiện hay khó chịu đến, "Xin lỗi làm phiền bạn, nhưng ..."
-v	02508078	0	0.5	xấu_hổ#2	bắt buộc thông qua một cảm giác xấu hổ, "Cô ấy xấu hổ và sửa lỗi của mình"
-v	02513460	0	0.5	không ưa#1	đặt vào thế bất lợi, cản trở, gây hại, "quy tắc này một cách rõ ràng bất lợi cho tôi"
-v	02513989	0	0.75	sai#1	xử bất công; làm sai trái; "Anh làm sai với chị ấy rồi!"
-v	02513742	0	0.625	định_kiến#1	bất lợi bởi định kiến; "Cô ấy cố gắng vượt qua định kiến để sống tốt
-r	00042614	0	0.625	buồn_bã#1	một cách đáng tiếc, "thật đáng buồn, ông đã chết trước khi ông có thể nhìn thấy đứa cháu của mình"
-r	00042769	0	0.875	không may_mắn#1 đáng_tiếc#1 than_ôi#1	do may mắn, "thật không may trời mưa cả ngày", "than ôi, tôi không thể ở lại"
-v	02483000	0.5	0	ám_sát#1	giết người, đặc biệt là của xã hội người nổi tiếng; "Anwar Sadat bị ám sát vì nhiều người không thích chính trị hòa bình với Israel"
-v	02350175	0.5	0	thoát#1	tự do khỏi một cái gì đó; "thoát khỏi ngôi nhà của các loài gây hại"
-v	02321391	0	0.5	cướp#1	lấy một cái gì đó đi bằng vũ lực hoặc khi không có sự đồng ý của chủ sở hữu; "Những kẻ trộm cướp tất cả tiền của anh ta"
-v	02321757	0	0.5	ăn_cắp#1	mất mà không có sự đồng ý của chủ sở hữu; "Ai đó đã ăn cắp ví tiền của tôi trên tàu", "tác giả này lấy ăn cắp toàn bộ các đoạn văn từ luận văn của tôi"
-v	02263027	0.625	0	tặng#1 hiến#1	cung cấp cho một tổ chức từ thiện hoặc lý do chính đáng; "Tôi hiến máu cho Hội Chữ thập đỏ cho các nạn nhân của trận động đất", "tặng tiền cho trại trẻ mồ côi", "Cô ấy tặng cho cô yêu thích tổ chức từ thiện mỗi tháng "
-v	02129709	0.75	0	xem#17	xem và hiểu, có một con mắt tốt, "Các nghệ sĩ đầu tiên phải học cách để xem"
-v	02123424	0	0.875	bứt_rứt#1 châm_chích#4	gây_ra một_cơn đau_nhói , " cây kim đâm da của mình gây bứt rứt"
-v	02122983	0	0.75	gai#2	gây ra một cảm giác châm chích hoặc ngứa ran; "sợ đến gai người"
-v	02109404	0.5	0	chịu đựng#3	có một sự khoan dung cho một chất độc hoặc thuốc mạnh hay tác nhân gây bệnh hoặc điều kiện môi trường, "Các bệnh nhân không chịu đựng được các loại thuốc chống viêm, chúng tôi đã cho ông"
-v	01829747	0.75	0.125	tỏa sáng#9 bừng sáng#6 rạng rỡ#6	kinh nghiệm một cảm giác hạnh phúc hay hạnh phúc, như là từ sức khỏe tốt hay một cảm xúc mãnh liệt, "Cô ấy cười rạng rỡ với niềm vui", "khuôn mặt tỏa sáng hạnh phúc "
-v	02124332	0	0.875	mùi#3	mùi hôi; "Anh ấy ít khi tắm rửa, và luôn có mùi"
-v	02164694	0.625	0	ngưỡng_mộ#2	nhìn vào với sự ngưỡng mộ; "Tôi rất ngưỡng mộ cô ấy"
-v	02198234	0.5	0.125	dường_như#4	xuất hiện trong tâm trí ý kiến của riêng hay của một người, "Tôi dường như bị hiểu lầm bởi tất cả mọi người", "Tôi dường như không thể tìm hiểu những ký tự Trung Quốc"
-v	02291135	0.875	0	phù_hợp#6	dễ chịu; "Rượu vang trắng không phù hợp với tôi"
-v	02350878	0	0.5	giá quá thấp#1 đổ#3	bán với giá thấp; "Chiếc áo đó đã được bán đi với giá quá thấp"
-v	02422026	0.5	0	tự_do#6	không bị các nghĩa vụ hoặc trách nhiệm trói buộc; "ông ta đã được thả tự do"
-v	02537407	0	0.5	bán#8 phản_bội#2	chuyển giao cho một kẻ thù của sự phản bội, "Judas bán Chúa Giêsu", "Các điệp viên phản bội đất nước"
-v	02679012	0.625	0	hội_đủ điều_kiện#1	chứng minh có khả năng hoặc phù hợp, đáp ứng yêu cầu; "bài báo này hội đủ điều kiện để công bố"
-v	02697610	0.5	0.25	hóa lẫn#1	là ngu ngốc hoặc tuổi già vì tuổi già; "Trở già hóa lẫn"
-v	02726385	0	0.5	đứng yên#1	không hành động hoặc làm bất cứ điều gì, "Ông chỉ đứng yên khi cảnh sát đánh đập những người biểu tình"
-v	02593001	0	0.875	thủ_đoạn#1	thủ thuật hoặc lừa dối; "ông ta là một con người thủ đoạn và độc ác"
-v	02580678	0	0.5	độc#1	hỏng như thể bởi chất độc; "đầu độc tâm trí của một ai đó", "độc bầu không khí trong văn phòng"
-v	02579447	0	0.625	bại_hoại#1 lật_đổ thô_tục#1 gởi lộn#1 suy đồi#1 hư#1 nhục#1	hỏng về mặt đạo đức hay không điều độ hoặc cảm thụ; "những người trẻ tuổi hư với rượu vang và phụ nữ", "Socrates bị buộc tội làm hư hỏng thanh niên"
-v	02588122	0	0.5	chống_đỡ#1	cố gắng để quản lý mà không cần giúp đỡ, "Các cầu thủ trẻ đã phải tự lo liệu chống đỡ cho bản thân sau khi cha mẹ của họ qua đời"
-v	02552829	0.625	0	phục_hồi chức_năng#3	khôi phục lại trạng thái của tình trạng tốt hay hoạt động; "phòng tập phục hồi chức năng"
-v	02496498	0.5	0	giải_phóng#1 giải trừ#2	miễn phí từ chế độ nô lệ hay nô dịch; "Sài Gòn giải phóng, nhân dân được giải trừ khỏi ách đô hộ"
-v	02343595	0	0.5	hy_sinh#1 cho#16	chịu đựng những mất mát, "Ông đã cho trẻ em cuộc sống của mình", "Tôi đã hy sinh hai con trai cho chiến tranh"
-v	02301000	0	0.5	trả_giá cao hơn#1	chào giá cao hơn giá thầu của đối thủ khi một trong những đối tác đã không chào giá hoặc tăng gấp đôi; "Ông ta trả giá cao hơn để nhất định mua được món hàng"
-v	01820077	0	0.5	bụi#1	làm khó chịu hay gặp khó khăn
-v	01808769	0.25	0.125	đẩy_lùi#2	làm giảm tác động, giảm sức mạnh ; "Mong sao bệnh tật bị đẩy lùi"
-v	01811441	0.625	0.25	hy_vọng#2	lạc quan, được tràn đầy hy vọng, có hy vọng, "Tôi vẫn hy vọng rằng tất cả sẽ biến chuyển tốt"
-v	01794969	0	0.5	nỗi thống_khổ#1	bị đau hoặc suy kiệt; "Có ai hiểu cho nỗi thống khổ của bà mẹ ấy"
-v	01795888	0	0.75	giận_dữ#1	đưa vào một cơn giận, làm tức giận dữ dội; "Ông ta giận dữ đuổi thằng bé ra khỏi nhà"
-r	00043436	0.625	0	do_đó#3	từ thời gian này, "một năm do đó nó sẽ bị lãng quên"
-a	017529532	0	0.6	không chỉ có lỗi#1	có nhiều hơn một khiếm khuyết; "Nó không chỉ có lỗi trong chuyện này"
-a	001070177	0.125	0.5	còn nhỏ#1	chưa đến tuổi trưởng thành; "nó còn nhỏ chưa hiểu chuyện người lớn"
-a	001070171	0.5	0.125	mơ_mộng#1	say mê theo những hình ảnh tốt đẹp nhưng xa vời, không thực tế ; "người hay mơ mộng"
-a	017529533	0	0.6	không_phải chỉ có lỗi#1	có nhiều hơn một khiếm khuyết; "Nó không phải chỉ có lỗi trong chuyện này"
-a	017529534	0	0.5	không_tập_trung#1	lơ đãng, không chú ý vào một cái gì; "Con bé học không tập trung"
-a	025033055	0	0.625	sáo_rỗng#1	không có nội dung gì; "lời văn sáo rỗng"
-v	018247365	0.125	0	chỉ quan_tâm#3	thích hoặc ước một điều gì đó; "nó chỉ quan tâm đến ăn uống"
-a	001633155	0.125	0.5	kém đến_đâu#2	không đến nỗi thấp nhất; "nó học có kém đến đâu đâu, sao cô nói thế"
-a	010692833	0	0.6	không_được hay#4	mang đến điều không tốt; "cô làm như thế không được hay"
-a	010692834	0	0.5	không_được bóng_bẩy#2	 không được đẹp đẽ, chau chuốt; "lời văn không được bóng bẩy"
-a	010692835	0.5	0	không có kiểu nhận_thức sáo_rỗng#4	có kiểu nhận thức sâu sắc; "học sinh ngày xưa không có kiểu nhận thức sáo rỗng như bây giờ"
-a	010692836	0	0.5	không tạo được cảm hứng#2	 không yêu thích, không tạo được niềm say mê; "không tạo được cảm hứng sáng tác"
-a	010692837	0	0.5	không một_chút sáng_tạo#2	cách làm rập khuôn; "cách làm không một chút sáng tạo"
-a	000788511	0	0.625	đáng báo_động#1	cảm giác bất ngờ về một sự nguy hiểm nào đó; "tình trạng đáng báo động"
-a	000788512	0.5	0	không tệ#1	có kết quả tương đối tốt; "bài làm không tệ"
-a	000788513	0.125	0.5	hơi xưa_cũ#1	đã có từ lâu ; "thời trang này hơi xưa cũ "
-v	000788514	0.125	0.6	không_được như_vậy#1	không được , thấp hơn một tiêu chuẩn nào đó ; "Công nghệ điện ảnh của Trung Quốc rất kỹ xảo còn điện ảnh Việt Nam thì không được như vậy"
-v	000788525	0.125	0.5	chỉ_trích#1	vạch sai lầm, khuyết điểm nhằm chê trách, phê phán ; "lên tiếng chỉ trích"
-v	000788526	0.6	0	nhiều điều_tốt_đẹp#1	mọi thứ đều thuận lợi,tiến triển; "lễ bế mạc đã thành công với nhiều điều tốt đẹp"
-v	000788527	0	0.6	cũng không_thể cải_thiện được#1	không có cách sửa chửa cho tốt đẹp lên; "chính quyền địa phương cũng không thể cải thiện được"
-v	000788528	0.5	0.125	chưa_chắc khả_năng#1	không dự đoán được khả năng xảy ra ; "cô ấy chưa chắc khả năng lập kỷ lục"
-v	000788529	0	0.5	không mang lại cảm_hứng#1	không có niềm yêu thích, say mê; "công việc không mang lại cảm hứng cho tôi"
-a	000788530	0.5	0	chân_thực hơn#1	đúng đắn, có như thế nào thì bày tỏ đúng như thế ;"cô cần trình bày chân thực hơn"
-a	000788531	0.125	0.5	rùng_mình#1	rùng mạnh toàn thân một cách bất ngờ, do sợ hãi hoặc bị lạnh đột ngột ; "rùng mình vì lạnh"
-a	000788532	0.5	0.125	không dày_cộp#1	mỏng; "cuốn sách không dày cộp"; "cặp kính không dày cộp"
-a	000788533	0	0.5	thật khó lắm thay#1	không dễ dàng, khó thực hiện; "để thay đổi tính nết của cô ta thật khó lắm thay"
-v	000788534	0.125	0.5	xì_xào#1	bàn tán riêng với nhau, có ý chê bai, dè bỉu ; "chúng nó có tính hay xì xào trong lớp"
-v	000788535	0	0.5	soi_mói#1	để ý, moi móc những sai sót, những chuyện riêng tư của người khác với dụng ý xấu; "mẹ chồng thường soi mói nàng dâu"
-v	000788536	0.125	0.5	không khơi dậy#1	không thúc đẩy được cái gì đó; "bài học không khơi dậy được ý thức của học sinh"
-v	000788521	0	0.5	không hào_hứng lắm#1	không có niềm yêu thích, say mê; "tôi không hào hứng lắm với chuyện đó"
-v	000788537	0	0.5	không_thể làm_gì hơn được#1	không có cách nào để giải quyết vấn đề ; "không thể làm gì hơn được cho cô ấy"
-v	000788539	0.125	0.6	rất khó chấp_nhận#1	không thể đồng ý ; "thật khó chấp nhận thái độ hỗn xược của nó"
-a	000788540	0.125	0.5	kém hấp_dẫn#1	không có sức hút, gây sự ham thích; "cô gái kém hấp dẫn"
-a	000788541	0	0.5	khô_khan#1	không có cảm xúc ; "lời văn khô khan"
-a	000788542	0.125	0.5	ngây_ngô đến vậy#1	kém tinh khôn hoặc kém hiểu biết đến mức khờ dại ; "sao nó lại có thể hành động ngây ngô đến vậy"
-v	000788543	0	0.6	hành_hạ#1	làm cho vất vả , khổ sở; "bà ta hành hạ trẻ em nhỏ"
-v	000788544	0.125	0.5	thấy sợ#1	cảm giác không dám đối mặt vì quá nguy hiểm; "tôi thấy sợ những người như thế"
-v	000788545	0.125	0.5	vã_mồ_hôi#1	 cảm giác sợ sệt, lo lắng; "tôi sợ vã mồ hôi ra"
-v	000788546	0	0.75	bạo_hành#1	hành động tàn ác; "nạn bạo hành trẻ em"
-v	000788547	0	0.6	tổn_thương#1	mất mát một phần, không còn được hoàn toàn nguyên vẹn như trước ; "lòng tự trọng bị tổn thương"
-v	000788548	0.125	0.5	canh_cánh#1	lúc nào cũng ở bên lòng, không để cho yên ; "tôi lo canh cánh"
-v	000788550	0	0.875	cực kỳ phẫn_nộ#1	uất hận đến mức bộc lộ những phản ứng mạnh mẽ, không kìm giữ được ; "hắn cực kỳ phẫn nộ"
-v	000788551	0.125	0.5	chia_buồn#1	chia sẻ nỗi buồn của người khác; "anh ấy chia buồn với thất bại của tôi"
-v	000788552	0.5	0.125	coi_thường#1	xem thường, cho là không quan trọng nên không chú ý gì đến ; "coi thường danh lợi"
-v	000788553	0.5	0	vượt_qua mọi thử_thách#1	cải thiện tình hình qua những khó khăn; "anh ấy là người có chí , sẵn sàng vượt qua mọi thử thách"
-v	000788554	0.5	0	hoàn_thành#1	làm xong một cách đầy đủ; "cô ấy đã hoàn thành công việc"
-v	000788555	0.5	0	ủng hộ#1	tỏ thái độ đồng tình bằng lời nói hoặc bằng hành động bênh vực, giúp đỡ ; "ủng hộ cuộc chiến tranh chính nghĩa"
-v	000788556	0.875	0.5	hết sức mình#1	cố gắng tất cả sức lực và tài năng vào một việc gì đó; "cô ấy đã cố gắng hết sức mình"
-v	000788558	0.5	0	giữ sức_khoẻ#1	đảm bảo sức khỏe tốt; "người già cần giữ sức khỏe"
-v	000788559	0.625	0	như mong_muốn#1	đúng như mong ước bản thân;"chúc cô đạt thành tích như mong muốn"
-v	000788560	0.5	0	tạo cơ_hội#1	tạo điều kiện thuận lợi; "hãy tạo cơ hội cho tôi"
-v	000788561	0.125	0.5	không_bao_giờ#1	khẳng định không bao giờ xảy ra chuyện nào đó; "không bao giờ tôi làm như thế"
-v	000788562	0	0.6	khó_khăn đến_thế#1	gặp tình thế không thuận lợi; "công việc bây giờ lại khó khăn đến thế"
-v	000788563	0.5	0	từ_thiện#1	có lòng thương người, sẵn sàng giúp đỡ người nghèo khó để làm phúc ; "quỹ từ thiện"
-a	000788564	0.125	0.5	ghê nhỉ#1	đanh đá, quá đáng trong việc gì; "cô ta cũng ghê nhỉ"
-a	000788565	0.125	0	bình_thường mà#1	không có gì đặc biệt ; "chuyện ấy cũng bình thường mà"
-v	000788567	0.5	0.125	tạo cơn sốt#1	tạo một sự kiện gây sự chú ý của nhiều người; "hàng khuyến mại tạo cơn sốt cho sinh viên"
-v	000788568	0.125	0.5	không_phải dễ#1	cần bỏ ra công sức nhất định mới làm được; "công việc ấy không phải dễ"
-v	000788569	0.5	0	tăng_lên#1	có xu hướng gia tăng so với bình thường; "hiệu quả tăng lên"
-v	000788570	0.5	0	hàng_hiệu#1	đồ dùng (thường là quần áo, dày dép, v.v.) chính hiệu, được sản xuất ở những hãng có tên tuổi lớn ; "các đại gia ưa dùng hàng hiệu"
-a	000788571	0.5	0.125	chuyện nhỏ#1	chuyện bình thường , có thể giải quyết; "đối với anh ấy đấy là chuyện nhỏ"
-n	000788572	0.125	0.5	giá quá cao#1	cao hơn mức bình thường;"chiếc giầy có giá quá cao so với bình thường"
-n	000788573	0.5	0	hiệu_năng#1	chỉ mức độ hiệu quả của công việc; "hiệu năng của công việc tương đối tốt"
-a	000788574	0.125	0.5	mới gì đâu#1	cũ, đã xuất hiện; "cái túi này có mới gì đâu"
-n	000788575	0	0.5	giá_đắt lắm#1	cao hơn so với mức bình thường; "đôi giày này giá đắt lắm"
-r	000788576	0.5	0	không thèm#1	không cần, không để ý đến cái gì đó; "tôi không thèm để ý đến hắn"
-v	000788577	0.5	0	chấn_chỉnh và chấm_dứt#1	cải thiện công việc nào đó;"tệ nạn này cần được chấn chỉnh và chấm dứt"
-a	000788578	0.125	0.5	choai_choai#1	như choai (thường hàm ý chê) ; "thanh niên choai choai"
-v	000788579	0.5	0	đừng buồn#1	khích lệ, động viên ai đó; "bạn đừng buồn"
-v	000788580	0.6	0	thấu_hiểu#1	hiểu một cách sâu sắc , tường tận,; "tôi thấu hiểu nỗi khổ của anh ấy"
-v	000788581	0.875	0	phấn_đấu#1	cố gắng, bền bỉ thực hiện nhằm đạt tới mục đích cao đẹp đã đề ra ; "phấn đấu thành học sinh giỏi"
-v	000788582	0	0.5	đục_khoét của_công#1	bòn rút của cải, dựa vào quyền thế của mình ;"quan lại đục khoét của công"
-v	000788583	0	0.675	giàu lên vì tham_nhũng#1	giàu có vì lợi dụng quyền hành tham ô, tham nhũng của dân; "một bộ phận quan lại giàu lên vì tham_nhũng"
-v	000788584	0.5	0.125	đừng quá quan_tâm#1	không để ý; "Đừng quá quan tâm đến những chuyện dó"
-v	000788585	0	0.675	ghét cay ghét_đắng#1	rất ghét; "tôi ghét cay ghét đắng nó"
-v	000788586	0	0.5	chẳng việc_gì phải buồn#1	không đáng để buồn; "chẳng việc gì phải buồn về điều đó"
-v	000788587	0	0.5	tính_toán#1	suy tính thiệt hơn cho cá nhân mình ; "cô ta hay tính toán thiệt hơn"
-a	000788588	0.5	0.125	trọc_phú#1	người giàu có mà dốt nát, bần tiện ; "gã trọc phú"
-a	000788589	0.5	0.125	thượng_lưu#1	tầng lớp trên, được coi là cao sang trong xã hội; phân biệt với trung lưu, hạ lưu ; "giới thượng lưu"
-n	000788590	0.675	0	nhà_giàu#1	nhà có điều kiện về kinh tế; "nó là con nhà giàu"
-a	000788591	0	0.5	thiển_cận#1	ông cạn, hời hợt, chỉ nhìn thấy cái gần, cái trước mắt, không biết nhìn xa trông rộng ;"đầu óc thiển cận"
-a	000788592	0.125	0.5	cổ_hủ#1	cũ kĩ và quá lạc hậu ; "xóa bỏ những thủ tục cổ hủ lạc hậu"
-a	000788593	0	0.5	khinh_người#1	thái độ không thân thiện , coi thường người khác; "cô ta có thái độ khinh người"
-a	000788594	0	0.675	kênh_kiệu#1	làm cao tỏ vẻ hơn người; "cô ta có dáng kênh kiệu"
-a	000788595	0.125	0.5	ủy mị#1	điệu đà, tỏ ra yếu ớt; "cô ta có vẻ ủy mị , thục nữ"
-a	007031099	0	0.625	nhàm_chán#1	bị ảnh hưởng hoặc đánh dấu bằng tinh thần thấp; "bài văn nhàm chán"
-a	011217577	0.625	0	giỏi_giang#1	giỏi, thành thạo; "buôn bán giỏi giang"
-a	011217578	0	0.75	quá thất_vọng#1	mất hết hi vọng, không còn trông mong gì được nữa;" cô ấy quá thất vọng"
-a	011217579	0	0.875	không_thể_nào chấp_nhận được#1	tệ hại đến mức không thể tưởng tượng được; "hành động không thể nào chấp nhận được"
-a	011217580	0.625	0	chân#1	thật, đúng với hiện thực; "phân biệt chân với giả"
-a	011217581	0.625	0	thiện#1	tốt, lành, hợp với đạo đức; "hành thiện tích đức cho đời"
-a	011217582	0.625	0	mỹ#1	cái đẹp; "tác phẩm của ông hướng đến chân thiện mỹ"
-a	011217583	0	0.5	lệch_lạc#1	không đúng, không ngay thẳng; "nó có tư tưởng lệch lạc"
-a	011217584	0	0.5	bàng_hoàng#1	ngẩn người ra, choáng váng đến mức như không còn ý thức được gì nữa ; "bàng hoàng trước tin dữ"
-a	011217585	0	0.875	đáng buồn#1	gây cảm giác không vui; "câu chuyện đáng buồn"
-a	011217587	0.625	0	lôi_cuốn hơn#1	làm cho đến mức ham thích có thể lôi cuốn; "giọng văn cần phải lôi cuốn hơn"
-a	011217588	0.875	0	uyên_bác#1	có kiến thức sâu rộng ; "nhà bác học uyên bác"
-a	011217589	0.5	0	hùng_biện#1	nói hay, lập luận chặt chẽ, có sức thuyết phục mạnh mẽ đối với người nghe ; "cô ấy có tài hùng biện"
-a	001937992	0	0.625	thấy xót_xa#1	thương tiếc sâu sắc , khó nguôi ; "cảnh tượng thật xót xa"
-a	001937993	0	0.875	đau_lòng đến thế_nào#1	tột cùng của sự đau xót; "không biết cô ta sẽ đau lòng đến thế nào"
-a	001937994	0	0.625	thật khủng_khiếp#1	hoảng sợ hoặc làm cho hoảng sợ ở mức rất cao; "tai họa thật khủng khiếp"
-a	001937995	0	0.5	choáng_váng#1	ở trạng thái mất cảm giác về sự thăng bằng, cảm thấy mọi vật xung quanh như đang chao đảo ; "đầu óc choáng váng"
-a	001937996	0.125	0.5	mỏng_manh#1	rất mỏng, gây cảm giác không đủ sức chịu đựng ; "hi vọng mỏng manh"
-a	001937997	0	0.625	đích_đáng#1	tương xứng hoàn toàn với những gì tốt hay không tốt đã làm ra, gây ra ; "hình phạt đích đáng"
-a	001937998	0	0.875	ác hơn_cả thú#1	quá ác độc; "hành động ác hơn cả thú"
-a	001937999	0	0.625	tổn_thất nặng_nề#1	thiệt hại lớn ; "sau thảm họa động đất Nhật chịu tổn thất nặng nề"
-a	001937920	0	0.625	xót_xa đau_lòng#1	cảm giác thương xót; "tôi thấy xót xa đau lòng"
-a	001937921	0	0.875	không_còn nhân_tính#1	quá độc ác; "hành động không còn nhân tính"
-a	001937922	0	0.625	thật tức chết đi đuợc#1	cảm giác tức giận tột cùng; "nó làm tôi thật tức chết đi được"
-a	001937923	0	0.625	bức_xúc#1	hết sức cấp bách, đòi hỏi phải sớm được giải quyết ; "đây là vấn đề bức xúc cần được giải quyết"
-a	001937924	0	0.875	vô nhân_tính#1	quá độc ác; "hành động vô nhân tính"
-a	001937925	0	0.875	vô cùng tàn_ác#1	quá độc ác; "hành động vô cùng tàn ác với động vật"
-a	001937926	0	0.625	không có tình_thương#1	không có tình cảm thương yêu, chia sẻ; "họ không có tình thương của con người"
-a	001937927	0	0.75	ghét#1	không ưa thích, muốn tránh hoặc cảm thấy khó chịu khi phải tiếp xúc với một đối tượng nào đó ; "ghét kẻ giả dối"
-a	001937928	0.875	0	yêu#1	có tình cảm thắm thiết dành riêng cho một người khác giới nào đó, muốn chung sống và cùng nhau gắn bó cuộc đời ; "họ yêu nhau suốt 4 năm rồi chia tay"
-a	001937929	0.875	0	thích_thú #1	có cảm giác bằng lòng, cảm thấy một đòi hỏi nào đó được thoả mãn ; "nó lắng nghe một cách thích thứ"
-v	001937930	0	0.5	a_dua#1	làm theo, bắt chước theo việc làm sai trái của người khác; "nó a dua theo bọn xấu"
-a	001937931	0	0.75	ác_hiểm#1	nguy hiểm đáng sợ; "mưu mô ác hiểm"
-a	001937932	0	0.5	ác_khẩu#1	hay nói những lời độc địa; "cô ta có tính ác khẩu nhưng không ác tâm"
-a	001937933	0	0.5	ác_liệt#1	xấu tồi tệ, gây nhiều thiệt hại; "thời tiết ác liệt" 
-v	001937934	0.5	0	ái_mộ#1	mến chuộng và kính trọng ; "nữ diễn viên được nhiều người ái mộ"
-v	001937935	0	0.6	ám_sát#1	giết người (thường là nhân vật quan trọng) một cách bí mật, có mưu tính trước ; "tổng thống bị ám sát hụt"
-v	001937936	0.125	0.5	an_phận#1	yên với phận của mình và cảnh sống hiện tại, không phấn đấu để có được một sự thay đổi ; "hắn cam chịu với cuộc sống nghèo khó"
-a	001937937	0	0.5	ám_muội#1	không rõ ràng, có điều gì đó không chính đáng, phải giấu kín ; "hành động ám muội"
-v	001937938	0.75	0	ái_ân#1	âu yếm và chung chăn gối với nhau; "họ đã có nhiều hành động ái ân với nhau"
-n	001937939	0.25	0.5	ảo_tưởng#1	sự tưởng tượng (hướng về tương lai), dựa trên mong muốn, ước mơ, thoát li hiện thực ; "nó hay sống trong ảo tưởng"
-v	001937940	0	0.5	ăn_đủ#1	hứng chịu hoàn toàn điều không hay hoặc thiệt hại về mình ; "xe gây tai nạn, tài xế bỏ chạy, mình chủ hàng ăn đủ"
-v	001937941	0	0.5	ăn_hiếp#	ỷ thế mạnh bắt người khác phải chịu lép mà làm theo ý muốn của mình ; "nó cậy thế khỏe ăn hiếp yếu"
-v	001937942	0.5	0	ăn_khách#1	bán được nhiều do được khách ưa chuộng ; "mặt hàng này đang rất ăn khách"
-v	001937943	0.125	0.5	ăn_thua#1	đạt được kết quả hay có một tác dụng nào đó ; "làm như thế không ăn thua"
-a	001937944	0	0.5	âm_thầm#1	lặng lẽ trong hoạt động, không tỏ ra cho người khác biết ; "chị đã âm thầm hi sinh tuổi trẻ của mình cho kháng chiến"
-a	001937945	0.5	0	ấm_êm #1	(quan hệ trong gia đình) thuận hoà, tốt đẹp ; "gia đình ấm êm"
-a	001937946	0.125	0.5	ẩm_ướt#1	ẩm, do thấm nhiều nước hoặc có chứa nhiều hơi nước; "nền nhà ẩm ướt"
-a	001937947	0.25	0.5	ân_hận#1	băn khoăn, day dứt và tự trách mình đã để xảy ra việc không hay ; "hắn ân hận về những gì đã làm với cô ấy"
-n	001937948	0.5	0	ân_nghĩa#1	tình nghĩa thắm thiết, gắn bó do có chịu ơn sâu với nhau ; "con cái có ân nghĩa với cha mẹ"
-a	001937949	0.5	0.25	ẩn_nấp#1	giấu mình ở nơi kín đáo hoặc nơi có vật che chở; "xuống hầm ẩn nấp tránh nạn" 
-n	001937950	0.5	0.25	ẩn_ý#1	ý kín đáo bên trong, vốn là cái chính muốn nói, nhưng không nói rõ, chỉ để ngầm hiểu ; "lời nói có ẩn ý"
-v	001937951	0.25	0.5	ấp_úng#1	từ gợi tả cách nói không nên lời hoặc nói không gãy gọn, không rành mạch vì lúng túng ; "nó trả lòi ấp úng"
-a	001937952	0	0.5	bạc_đãi#1	đối xử rẻ rúng (với cái lẽ ra phải được coi trọng); "hắn bạc đãi với người làm thuê" 
-v	001937953	0.25	0.5	bãi_nhiệm#1	bãi bỏ chức vụ (thường là quan trọng) trong bộ máy nhà nước (của người nào đó) ; "thủ tướng bị bãi nhiệm"
-v	001937954	0.25	0.25	bãi_bỏ#1	bỏ đi một cách chính thức, không còn giá trị thi hành nữa ; "nhà nước bãi bỏ một đạo luật"
-v	001937955	0.125	0.5	bán_tháo#1	bán với giá thấp hơn hẳn giá thị trường, nhằm thu hồi vốn nhanh ; "công ty phải bán tháo lo hàng tồn kho"
-v	001937956	0.25	0.5	bàng_quan#1	tự coi mình là người ngoài cuộc, coi là không dính líu đến mình ; "thái độ bàng quan vô trách nhiệm"
-v	001937957	0.5	0.25	bảo_lãnh#1	bảo đảm cho (một cá nhân hoặc tổ chức) làm một việc hoặc hưởng một quyền lợi có gắn với nghĩa vụ, chịu trách nhiệm nếu (cá nhân hoặc tổ chức ấy) sau này không thực hiện nghĩa vụ ; "cô ấy được bảo lãnh ra tù"
-a	001937958	0	0.25	bần_bật#1	(run, rung) mạnh, giật nẩy lên liên tiếp ; "sợ quá , tay chân run bần bật"
-a	001937959	0.125	0.5	báo_oán#1	đáp lại bằng hành động tương xứng kẻ đã gây oán với mình ; "đền ân báo oán"
-v	001937960	0.125	0.5	chần_chừ#1	do dự, chưa có quyết tâm để làm ngay việc gì ; "hắn có thái độ chần chừ"
-a	001937961	0.75	0	chân_tình#1	có lòng thành thật, đầy nhiệt tình ; "một sự giúp đỡ chân tình"
-a	001937962	0	0.25	chằng_chịt#1	thành nhiều đường, nhiều vết đan vào nhau dày đặc và không theo hàng lối nhất định ; "dây thép gai chằng chịt"
-v	001937963	0.25	0.5	bày_vẽ#1	đặt ra cái không thiết thực hoặc không thật cần thiết; "nó cứ hay bày vẽ" 
-v	001937964	0	0.5	châm_chọc#1	nói xói móc nhằm trêu chọc, làm cho người ta bực tức, khó chịu ; "giọng nói mỉa mai , châm chọc"
-r	001937965	0.125	0.5	bập_bõm#1	một cách không chắc chắn và không đầy đủ, chỗ được chỗ không ; "tôi chỉ bập bõm được vài câu tiếng anh"
-a	001937966	0.25	0.5	chằm_chằm#1	(cách nhìn) chăm chú, thẳng và lâu, không chớp mắt, thường có ý dò xét ; "nó nhìn chằm chằm vào tôi"
-a	001937967	0	0.5	be_bét#1	(tình trạng sai sót, hư hỏng) nhiều và tồi tệ hết sức ; "nó tính sai be bét"
-a	001937968	0.25	0.5	cấp_bách#1	căng thẳng, gay go, đòi hỏi phải hành động gấp, không thể chậm trễ ; "tình thế cấp bách"
-a	001937969	0.5	0	cất_nhắc#1	nâng đỡ, đưa lên một chức vụ cao hơn ; "anh ta được cất nhăc vào vị trí trưởng phòng"
-v	001937970	0.675	0	chăm_chút#1	trông nom, săn sóc tỉ mỉ, chu đáo; "nó rất biết chăm chút sắc đẹp"
-v	001937971	0	0.5	chập_chờn#1	ở trạng thái khi ẩn khi hiện, khi tỏ khi mờ, khi rõ khi không ; "ánh đuốc chập chờn phía đằng xa"
-a	001937972	0.5	0	hay#1	được đánh giá là có tác dụng gây được hứng thú hoặc cảm xúc tốt đẹp, dễ chịu ; "cô ấy hát hay"
-a	001937973	0.6	0	tuyệt#1	đẹp, hay, tốt đến mức làm cho thích thú tột bậc, coi như không còn có thể đòi hỏi gì hơn ; "giọng ca thật tuyệt"
-a	001937974	0	0.6	lười#1	ở trạng thái không thích, ngại làm việc, ít chịu cố gắng ; "nó lười suy nghĩ"
-a	001937975	0.75	0	chăm#1	có sự chú ý thường xuyên làm công việc gì đó (thường là việc có ích) một cách đều đặn ; "đó là cô bé chăm học , chăm làm"
-a	001937976	0.5	0	nghiêm_túc#1	có ý thức coi trọng đúng mức những yêu cầu đối với mình, biểu hiện ở thái độ, hành động ; "người Nhật có tác phong làm việc nghiêm túc"
-v	001937977	0.5	0	thở_phào#1	thở ra một hơi dài vẻ khoan khoái, nhẹ nhõm vì đã trút được điều đè nặng trong lòng ; "nó thở phào nhẹ nhõm"
-a	001937977	0.6	0	nhẹ_nhõm#1	có cảm giác thanh thản, khoan khoái, không còn bị vướng bận, bị đè nặng; "làm xong việc tôi thấy trong lòng nhẹ nhõm"
-a	001937978	0.5	0	tối_ưu#1	tốt nhất, đưa lại hiệu quả tốt nhất ; "đó là lời giải tối ưu nhất"
-a	001937979	0	0.6	tiêu_cực#1	không lành mạnh, có tác dụng không tốt đối với quá trình phát triển của xã hội ; "ngăn ngừa những tệ nạn tiêu cực"
-v	001937980	0.5	0	cải_tiến#1	sửa đổi cho tiến bộ hơn; "cái tiến phương thức canh tác"
-a	001937981	0.5	0	xinh#1	có hình dáng và những đường nét rất dễ coi, ưa nhìn (thường nói về trẻ em, phụ nữ trẻ) ; "em bé rất xinh"
-a	001937982	0.6	0	xinh_xắn#1	xinh và rất ưa nhìn; "căn phòng xinh xắn" 
-a	001937983	0.125	0.5	khờ#1	kém về trí khôn và sự tinh nhanh, không đủ khả năng suy xét để ứng phó với hoàn cảnh, để biết làm những gì nên làm ; "con bé hãy còn khờ"
-a	001937984	0	0.75	ngu#1	rất kém về trí lực, không hiểu biết gì về cả những điều ai cũng hiểu, cũng biết ; "Rồng vàng tắm nước ao tù, Người khôn ở với người ngu bực mình." 
-a	001937986	0.75	0	giỏi#1	có trình độ cao, đáng được khâm phục, khen ngợi ; "giáo viên dạy giỏi"
-a	svx1937981	0	0.5	xấu#1 xấu_xí#1	có hình dáng và những đường nét rất khó coi (thường nói về đồ vật, đôi khi nói về ai đó) ; "cái máy trông rất xấu"
-
-"""
-
-def parse_sentiwordnet():
-    rows = []
-    for line in RAW_SENTI_DATA.strip().split('\n'):
-        parts = line.split()
-        if len(parts) >= 5:
-            try:
-                pos, neg = float(parts[2]), float(parts[3])
-                label = "Positive" if pos > neg else "Negative" if neg > pos else "Neutral"
-                word = parts[4].split('#')[0].replace('_', ' ')
-                rows.append({"Word": word, "Pos": pos, "Neg": neg, "Label": label})
-            except: continue
-    return pd.DataFrame(rows)
+    return pd.DataFrame(all_data), True
 
 # ==================================================
 # 3. GIAO DIỆN CHÍNH
 # ==================================================
+st.title("📊 Dữ Liệu & Huấn Luyện (Dashboard)")
+st.write("Tổng quan về bộ dữ liệu đã được làm sạch và sử dụng cho Model.")
 
-st.title("📊 Model Training Dashboard")
-st.markdown("Tổng quan về dữ liệu huấn luyện, hiệu suất mô hình và phân tích từ vựng.")
+df, data_found = load_all_data()
 
-# Load dữ liệu
-df_train = load_training_data()
-model_path = os.path.join("models", "sentiment_model.pth")
-has_model = os.path.exists(model_path)
+if not data_found:
+    st.error("⚠️ Không tìm thấy dữ liệu trong thư mục `data/`. Vui lòng tạo thư mục `data` và upload file .txt vào đó.")
+    st.stop()
 
-# --- TOP METRICS (Thống kê nhanh) ---
+# --- METRICS (Thống kê số lượng) ---
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric("Total Samples", f"{len(df_train):,}", "Train Data")
+    st.metric("Tổng mẫu (Samples)", f"{len(df):,}")
 with col2:
-    st.metric("Model Status", "Ready" if has_model else "Not Found", delta_color="normal" if has_model else "off")
+    st.metric("Dữ liệu Train", f"{len(df[df['Type']=='Train']):,}")
 with col3:
-    st.metric("Accuracy (Est.)", "89.2%", "+1.5%") # Số liệu demo hoặc lấy từ log
+    st.metric("Dữ liệu Test", f"{len(df[df['Type']=='Test']):,}")
 with col4:
-    st.metric("Vocabulary", "5,420", "Unique Words")
+    vocab_est = len(set(" ".join(df['Content'].astype(str)).split()))
+    st.metric("Từ vựng (Ước tính)", f"{vocab_est:,}")
 
-st.write("---")
+st.divider()
 
-# --- TABS GIAO DIỆN ---
-tab1, tab2, tab3 = st.tabs(["📂 Dataset Insights", "🧠 Model Evaluation", "📖 Dictionary (SentiWordNet)"])
+# --- TABS ---
+tab1, tab2, tab3 = st.tabs(["📈 Phân Bố (Charts)", "☁️ Từ Khóa (WordCloud)", "📋 Dữ Liệu Chi Tiết"])
 
-# ===================== TAB 1: DATASET =====================
+# TAB 1: CHARTS
 with tab1:
-    c1, c2 = st.columns([1, 2])
-    
+    c1, c2 = st.columns(2)
     with c1:
-        st.subheader("Phân bố nhãn (Class Distribution)")
-        # Biểu đồ tròn tương tác bằng Plotly
-        counts = df_train['Label'].value_counts().reset_index()
+        st.subheader("Tỷ lệ cảm xúc (Sentiment)")
+        counts = df['Label'].value_counts().reset_index()
         counts.columns = ['Label', 'Count']
-        fig = px.pie(counts, values='Count', names='Label', hole=0.4, 
-                     color='Label',
-                     color_discrete_map={'Positive':'#2ecc71', 'Negative':'#e74c3c', 'Neutral':'#f1c40f'})
-        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig, use_container_width=True)
         
-        st.caption("Dữ liệu được lấy từ các file: train_positive, train_negative, train_neutral.")
-
-    with c2:
-        st.subheader("Word Cloud (Đám mây từ)")
-        # Chọn loại nhãn để xem
-        selected_label = st.selectbox("Chọn nhãn để xem từ khóa phổ biến:", ["Positive", "Negative", "Neutral"])
-        
-        # Lọc text theo nhãn
-        text_data = " ".join(df_train[df_train['Label'] == selected_label]['Content'].astype(str))
-        
-        # Tạo WordCloud
-        if text_data:
-            wc = WordCloud(width=800, height=400, background_color='white', 
-                           colormap='Greens' if selected_label=='Positive' else 'Reds' if selected_label=='Negative' else 'Oranges').generate(text_data)
+        if HAS_PLOTLY:
+            fig = px.pie(counts, values='Count', names='Label', hole=0.5,
+                         color='Label',
+                         color_discrete_map={'Positive':'#2ecc71', 'Negative':'#e74c3c', 'Neutral':'#f1c40f'})
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.bar_chart(df['Label'].value_counts())
             
-            fig_wc, ax = plt.subplots(figsize=(10, 5))
+    with c2:
+        st.subheader("Số lượng Train vs Test")
+        if HAS_PLOTLY:
+            type_counts = df.groupby(['Type', 'Label']).size().reset_index(name='Count')
+            fig2 = px.bar(type_counts, x="Type", y="Count", color="Label", barmode="group",
+                          color_discrete_map={'Positive':'#2ecc71', 'Negative':'#e74c3c', 'Neutral':'#f1c40f'})
+            st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.write(df['Type'].value_counts())
+
+# TAB 2: WORDCLOUD
+with tab2:
+    st.subheader("☁️ Đám mây từ vựng (Word Cloud)")
+    
+    if HAS_WORDCLOUD:
+        selected_sentiment = st.radio("Chọn loại cảm xúc để xem:", ["Positive", "Negative", "Neutral"], horizontal=True)
+        
+        # Lọc text
+        subset = df[df['Label'] == selected_sentiment]
+        text = " ".join(subset['Content'].astype(str))
+        
+        if text:
+            # Tạo màu tùy chọn
+            cmap = 'Greens' if selected_sentiment == 'Positive' else 'Reds' if selected_sentiment == 'Negative' else 'Oranges'
+            
+            wc = WordCloud(width=1000, height=400, background_color='white', colormap=cmap, max_words=100).generate(text)
+            
+            fig_wc, ax = plt.subplots(figsize=(12, 5))
             ax.imshow(wc, interpolation='bilinear')
             ax.axis('off')
             st.pyplot(fig_wc)
         else:
-            st.warning("Không đủ dữ liệu để tạo Word Cloud.")
+            st.info("Chưa có dữ liệu cho nhãn này.")
+    else:
+        st.warning("⚠️ Thư viện `wordcloud` chưa được cài đặt. Vui lòng thêm vào requirements.txt")
 
-    # Bảng dữ liệu mẫu
-    st.subheader("Dữ liệu mẫu (Sample Data)")
-    st.dataframe(df_train.sample(min(10, len(df_train))), use_container_width=True)
-
-# ===================== TAB 2: MODEL EVALUATION =====================
-with tab2:
-    st.subheader("Ma trận nhầm lẫn (Confusion Matrix)")
-    
-    col_eva1, col_eva2 = st.columns([1, 1])
-    
-    with col_eva1:
-        st.write("Biểu đồ thể hiện độ chính xác của model khi dự đoán trên tập Test.")
-        # Demo Confusion Matrix (Bạn có thể thay bằng số thực tế nếu có log)
-        cm_data = [[450, 30, 20], [40, 380, 80], [10, 50, 440]]
-        labels = ["Negative", "Neutral", "Positive"]
-        
-        fig_cm = px.imshow(cm_data,
-                        labels=dict(x="Predicted", y="Actual", color="Count"),
-                        x=labels, y=labels,
-                        text_auto=True, aspect="auto", color_continuous_scale="Greens")
-        st.plotly_chart(fig_cm, use_container_width=True)
-    
-    with col_eva2:
-        st.subheader("Chi tiết chỉ số (Metrics)")
-        st.markdown("""
-        | Class | Precision | Recall | F1-Score |
-        |-------|-----------|--------|----------|
-        | **Negative** | 0.90 | 0.88 | 0.89 |
-        | **Neutral** | 0.82 | 0.76 | 0.79 |
-        | **Positive** | 0.88 | 0.92 | 0.90 |
-        | **AVG** | **0.87** | **0.85** | **0.86** |
-        """)
-        st.info("ℹ️ **Nhận xét:** Model nhận diện tốt nhãn Positive và Negative, nhưng đôi khi bị nhầm lẫn ở nhãn Neutral.")
-
-# ===================== TAB 3: DICTIONARY =====================
+# TAB 3: DATA TABLE
 with tab3:
-    st.subheader("📖 Từ điển cảm xúc (SentiWordNet)")
-    st.write("Danh sách các từ vựng và trọng số tình cảm của chúng.")
+    st.subheader("🔍 Tra cứu dữ liệu thô")
     
-    df_dict = parse_sentiwordnet()
+    # Bộ lọc
+    filter_col1, filter_col2 = st.columns(2)
+    with filter_col1:
+        type_filter = st.multiselect("Chọn tập dữ liệu:", ["Train", "Test"], default=["Train", "Test"])
+    with filter_col2:
+        label_filter = st.multiselect("Chọn nhãn:", ["Positive", "Negative", "Neutral"], default=["Positive", "Negative", "Neutral"])
     
-    # Tô màu bảng
-    def color_sentiment(val):
-        color = '#d4edda' if val == 'Positive' else '#f8d7da' if val == 'Negative' else '#fff3cd'
-        return f'background-color: {color}'
-
-    st.dataframe(df_dict.style.applymap(color_sentiment, subset=['Label']), use_container_width=True)
+    # Apply filter
+    df_show = df[df['Type'].isin(type_filter) & df['Label'].isin(label_filter)]
     
-    st.caption("Dữ liệu này được dùng để hỗ trợ model hiểu ngữ nghĩa của từ.")
-
+    st.dataframe(df_show, use_container_width=True, height=500)
