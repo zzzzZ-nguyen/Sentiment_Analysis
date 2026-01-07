@@ -7,5 +7,6 @@ numpy
 matplotlib
 seaborn
 wordcloud
-torch --index-url https://download.pytorch.org/whl/cpu
+plotly
+torch
 
