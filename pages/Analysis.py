@@ -1,182 +1,168 @@
 import streamlit as st
 import pandas as pd
-import re
-
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from docx import Document
-
+import joblib
+import os
+from datetime import datetime
 
 # ==================================================
-# 🔍 Language detection
+# ⚙️ CẤU HÌNH TRANG
 # ==================================================
-def is_vietnamese(text: str) -> bool:
-    return bool(re.search(
-        r"[àáạảãâăđêôơưíìịỉĩúùụủũýỳỵỷỹ]",
-        text.lower()
-    ))
+st.set_page_config(page_title="Smart Sentiment Analysis", page_icon="🧠", layout="wide")
 
+# File lưu trữ dữ liệu lịch sử
+HISTORY_FILE = "data/history_log.csv"
 
-# ==================================================
-# 🇻🇳 Vietnamese sentiment (rule-based)
-# ==================================================
-VI_POS = [
-    "tốt", "tuyệt", "hài lòng", "xuất sắc",
-    "ổn", "đẹp", "ngon", "ưng ý", "hoàn hảo"
-]
-
-VI_NEG = [
-    "tệ", "xấu", "kém", "thất vọng",
-    "dở", "lỗi", "tồi", "không tốt"
-]
-
-def vietnamese_sentiment(text: str):
-    score = 0
-    t = text.lower()
-
-    for w in VI_POS:
-        if w in t:
-            score += 1
-    for w in VI_NEG:
-        if w in t:
-            score -= 1
-
-    if score > 0:
-        return "positive", min(0.6 + score * 0.1, 0.95)
-    elif score < 0:
-        return "negative", min(0.6 + abs(score) * 0.1, 0.95)
-    else:
-        return "neutral", 0.55
-
+# Tạo thư mục data nếu chưa có
+if not os.path.exists("data"):
+    os.makedirs("data")
 
 # ==================================================
-# 🇺🇸 English ML model
+# 📦 HÀM HỖ TRỢ (LOAD MODEL & STORAGE)
 # ==================================================
 @st.cache_resource
-def load_english_model():
-    texts = [
-        "This product is very good",
-        "Excellent quality and fast delivery",
-        "Amazing experience, I love it",
-        "Bad product, very disappointed",
-        "Terrible quality, waste of money",
-        "It is okay, not bad",
-        "Average quality"
-    ]
-    labels = [
-        "positive", "positive", "positive",
-        "negative", "negative",
-        "neutral", "neutral"
-    ]
+def load_model():
+    # Sửa đường dẫn phù hợp với máy của bạn
+    paths = [os.path.join("models", "model_en.pkl"), os.path.join("..", "models", "model_en.pkl")]
+    for p in paths:
+        if os.path.exists(p):
+            try:
+                model = joblib.load(p)
+                vec_path = p.replace("model_en.pkl", "vectorizer_en.pkl")
+                vectorizer = joblib.load(vec_path)
+                return model, vectorizer
+            except:
+                continue
+    return None, None
 
-    vectorizer = TfidfVectorizer(stop_words="english")
-    X = vectorizer.fit_transform(texts)
+def save_to_history(text, predicted_label, user_correction=None):
+    """Lưu dữ liệu vào file CSV"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Nhãn cuối cùng (nếu user sửa thì lấy user sửa, không thì lấy máy đoán)
+    final_label = user_correction if user_correction else predicted_label
+    
+    new_data = pd.DataFrame({
+        "Timestamp": [timestamp],
+        "Text": [text],
+        "Predicted": [predicted_label],
+        "Corrected_Label": [final_label], # Nhãn chuẩn để train lại sau này
+        "Is_Correction": [user_correction is not None] # Đánh dấu dòng nào do người dùng sửa
+    })
 
-    model = LogisticRegression()
-    model.fit(X, labels)
+    if not os.path.exists(HISTORY_FILE):
+        new_data.to_csv(HISTORY_FILE, index=False)
+    else:
+        new_data.to_csv(HISTORY_FILE, mode='a', header=False, index=False)
 
-    return model, vectorizer
-
+def load_history():
+    if os.path.exists(HISTORY_FILE):
+        return pd.read_csv(HISTORY_FILE)
+    return pd.DataFrame(columns=["Timestamp", "Text", "Predicted", "Corrected_Label", "Is_Correction"])
 
 # ==================================================
-# 🎯 PAGE
+# 🖥️ GIAO DIỆN CHÍNH
 # ==================================================
-def show():
+st.markdown("<h2 style='color:#2b6f3e;'>🧠 Smart Sentiment Analysis</h2>", unsafe_allow_html=True)
+st.write("Hệ thống phân tích cảm xúc có khả năng ghi nhớ và thu thập dữ liệu huấn luyện.")
 
-    st.markdown(
-        "<h3 style='color:#2b6f3e;'>Analysis – Sentiment Analysis (Vietnamese & English)</h3>",
-        unsafe_allow_html=True
-    )
+model, vectorizer = load_model()
 
-    st.write("Analyze product reviews and classify sentiment.")
+if not model:
+    st.error("⚠️ Không tìm thấy Model. Vui lòng kiểm tra thư mục 'models/'.")
+    st.stop()
 
-    model_en, vectorizer_en = load_english_model()
+col1, col2 = st.columns([2, 1])
 
-    # ================= INPUT SINGLE REVIEW =================
-    st.subheader("📝 Input Product Review")
-
-    review = st.text_area(
-        "Enter a product review (Vietnamese or English):",
-        height=120,
-        placeholder="Ví dụ: Sản phẩm tốt / This product is excellent"
-    )
-
-    if st.button("▶️ Analyze Sentiment"):
-        if not review.strip():
-            st.warning("Please enter a review.")
+# --- CỘT TRÁI: NHẬP LIỆU & DỰ ĐOÁN ---
+with col1:
+    st.subheader("1. Phân Tích")
+    user_input = st.text_area("Nhập nội dung đánh giá (Review):", height=150, placeholder="Ví dụ: Sản phẩm này dùng rất thích...")
+    
+    # Biến session state để giữ kết quả sau khi reload
+    if 'prediction_result' not in st.session_state:
+        st.session_state.prediction_result = None
+    
+    if st.button("🚀 Phân Tích Ngay", type="primary"):
+        if user_input.strip():
+            # Xử lý dự đoán
+            text_vec = vectorizer.transform([user_input.lower()])
+            pred = model.predict(text_vec)[0]
+            prob = model.predict_proba(text_vec).max()
+            
+            # Lưu vào session để hiển thị
+            st.session_state.prediction_result = {
+                "text": user_input,
+                "label": pred,
+                "score": prob
+            }
+            # Tự động lưu log ban đầu
+            save_to_history(user_input, pred) 
         else:
-            if is_vietnamese(review):
-                sentiment, confidence = vietnamese_sentiment(review)
-                st.success(f"Predicted Sentiment: **{sentiment.upper()}**")
-                st.info(f"Confidence: **{confidence:.2f}**")
-                st.caption("Language detected: Vietnamese")
-            else:
-                X = vectorizer_en.transform([review])
-                sentiment = model_en.predict(X)[0]
-                confidence = model_en.predict_proba(X).max()
-                st.success(f"Predicted Sentiment: **{sentiment.upper()}**")
-                st.info(f"Confidence: **{confidence:.2f}**")
-                st.caption("Language detected: English")
+            st.warning("Vui lòng nhập nội dung!")
 
-    # ================= BATCH ANALYSIS =================
-    st.write("---")
-    st.subheader("📂 Upload Reviews Dataset (CSV / TXT / DOCX)")
+    # HIỂN THỊ KẾT QUẢ & SỬA LỖI
+    if st.session_state.prediction_result:
+        res = st.session_state.prediction_result
+        
+        st.divider()
+        st.markdown("### Kết quả:")
+        
+        # Hiển thị màu sắc dựa trên kết quả
+        color_map = {"positive": "success", "negative": "error", "neutral": "warning"}
+        msg_func = getattr(st, color_map.get(res['label'], "info"))
+        
+        msg_func(f"Dự đoán: **{res['label'].upper()}** (Độ tin cậy: {res['score']:.2%})")
+        
+        # --- PHẦN FEEDBACK (QUAN TRỌNG) ---
+        with st.expander("🛠️ Báo cáo sai / Sửa nhãn đúng"):
+            st.write("Nếu máy dự đoán sai, hãy chọn nhãn đúng bên dưới để giúp máy học tốt hơn:")
+            correct_label = st.radio("Nhãn chính xác là:", model.classes_, horizontal=True)
+            
+            if st.button("💾 Cập nhật dữ liệu"):
+                if correct_label != res['label']:
+                    save_to_history(res['text'], res['label'], user_correction=correct_label)
+                    st.success("Đã lưu phản hồi! Dữ liệu này sẽ được dùng để train lại model.")
+                    # Xóa session để reset
+                    del st.session_state.prediction_result
+                    st.rerun()
+                else:
+                    st.info("Nhãn bạn chọn trùng với dự đoán. Không cần cập nhật.")
 
-    st.caption(
-        "CSV: cột 'review' | TXT: mỗi dòng | DOCX: mỗi đoạn"
-    )
-
-    file = st.file_uploader(
-        "Upload file",
-        type=["csv", "txt", "docx"]
-    )
-
-    if file:
-        reviews = []
-
-        if file.name.endswith(".csv"):
-            df = pd.read_csv(file)
-            if "review" not in df.columns:
-                st.error("CSV must contain column named: review")
-                return
-            reviews = df["review"].astype(str).tolist()
-
-        elif file.name.endswith(".txt"):
-            content = file.read().decode("utf-8")
-            reviews = [l.strip() for l in content.splitlines() if l.strip()]
-
-        elif file.name.endswith(".docx"):
-            doc = Document(file)
-            reviews = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-
-        sentiments, confidences = [], []
-
-        for r in reviews:
-            if is_vietnamese(r):
-                s, c = vietnamese_sentiment(r)
-            else:
-                X = vectorizer_en.transform([r])
-                s = model_en.predict(X)[0]
-                c = model_en.predict_proba(X).max()
-
-            sentiments.append(s)
-            confidences.append(round(c, 2))
-
-        result_df = pd.DataFrame({
-            "review": reviews,
-            "sentiment": sentiments,
-            "confidence": confidences
-        })
-
-        st.success(f"Processed {len(result_df)} reviews")
-        st.dataframe(result_df.head())
-
-        st.subheader("📊 Sentiment Distribution")
-        st.bar_chart(result_df["sentiment"].value_counts())
-
+# --- CỘT PHẢI: LỊCH SỬ & DỮ LIỆU ---
+with col2:
+    st.subheader("2. Lịch sử & Dữ liệu")
+    
+    # Load và hiển thị lịch sử
+    history_df = load_history()
+    
+    if not history_df.empty:
+        # Đảo ngược để thấy cái mới nhất lên đầu
+        display_df = history_df.iloc[::-1].head(10)
+        
+        # Hiển thị dạng bảng nhỏ
+        st.dataframe(
+            display_df[["Text", "Corrected_Label"]], 
+            hide_index=True,
+            use_container_width=True
+        )
+        
+        st.caption(f"Tổng số dữ liệu đã lưu: {len(history_df)} dòng")
+        
+        # Nút tải dữ liệu về
+        csv_data = history_df.to_csv(index=False).encode('utf-8')
         st.download_button(
-            "⬇️ Download result (CSV)",
-            data=result_df.to_csv(index=False),
-            file_name="sentiment_results.csv",
+            label="📥 Tải trọn bộ Dataset (.csv)",
+            data=csv_data,
+            file_name="sentiment_history_data.csv",
             mime="text/csv"
         )
+    else:
+        st.info("Chưa có lịch sử phân tích nào.")
+
+# CSS làm đẹp
+st.markdown("""
+<style>
+div.stButton > button {width: 100%; border-radius: 5px;}
+[data-testid="stSidebar"] {background-color: #f0f2f6;}
+</style>
+""", unsafe_allow_html=True)
