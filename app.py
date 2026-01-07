@@ -12,24 +12,58 @@ st.set_page_config(
 )
 
 # ==========================
-# 🎨 BACKGROUND (SỬ DỤNG 5 MÀU TỪ BẢNG MÀU)
+# 🎨 CSS STYLING (BACKGROUND SỌC & KHUNG CARD)
 # ==========================
-# Tạo background gradient sử dụng các màu từ bảng màu (Kem nhạt -> Xanh bạc hà)
-page_bg_img = """
+# Bảng màu: #A20409 (Đỏ), #E58E61 (Cam), #F0EBD6 (Kem), #BBDEA4 (Xanh nhạt), #9BBA74 (Xanh Olive)
+
+css_style = """
 <style>
+/* 1. Background Sọc Chéo (Striped Gradient) */
 [data-testid="stAppViewContainer"] {
-background-image: linear-gradient(to right top, #F0EBD6, #BBDEA4);
-background-size: cover;
+    background-color: #F0EBD6;
+    background-image: repeating-linear-gradient(
+        45deg,
+        #F0EBD6,
+        #F0EBD6 20px,
+        #BBDEA4 20px,
+        #BBDEA4 40px
+    );
+    background-attachment: fixed;
 }
+
+/* 2. Làm trong suốt Header để thấy nền */
 [data-testid="stHeader"] {
-background-color: rgba(0,0,0,0);
+    background-color: rgba(255,255,255,0.6);
+    backdrop-filter: blur(5px);
 }
+
+/* 3. Sidebar Styling */
 [data-testid="stSidebar"] {
-background-color: #9BBA74; /* Sử dụng màu Xanh ô liu cho Sidebar */
+    background-color: #ffffff;
+    border-right: 3px solid #E58E61;
 }
+
+/* 4. CSS Class cho Khung Tên (Card Style) */
+.info-card {
+    background-color: rgba(255, 255, 255, 0.95); /* Nền trắng hơi trong */
+    border-radius: 15px;       /* Bo tròn góc */
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1); /* Đổ bóng 3D */
+    font-family: sans-serif;
+    color: #333;
+}
+
+/* Hiệu ứng hover cho khung */
+.info-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(0,0,0,0.15);
+    transition: all 0.3s ease;
+}
+
 </style>
 """
-st.markdown(page_bg_img, unsafe_allow_html=True)
+st.markdown(css_style, unsafe_allow_html=True)
 
 # ==========================
 # 🎨 HEADER
@@ -45,9 +79,11 @@ with col1:
 with col2:
     st.markdown(
         """
-        <h2 style="color:#A20409; margin-bottom:0;"> Topic 5: Developing a Sentiment Analysis Application for Product Reviews
+        <h2 style="color:#A20409; margin-bottom:0; text-shadow: 2px 2px 0px #fff;">
+        Topic 5: Developing a Sentiment Analysis Application for Product Reviews
         </h2>
-        <h4 style="color:#E58E61; margin-top:4px;"> Supporting E-Commerce Business Decision Making (Open-source + Streamlit)
+        <h4 style="color:#E58E61; margin-top:4px; text-shadow: 1px 1px 0px #fff;">
+        Supporting E-Commerce Business Decision Making (Open-source + Streamlit)
         </h4>
         """,
         unsafe_allow_html=True
@@ -76,57 +112,64 @@ page = st.sidebar.radio(
 # 📦 ROUTING (NỘI DUNG CHÍNH)
 # ==========================
 
-# --- [CẬP NHẬT] TRANG HOME ---
+# --- TRANG HOME ---
 if page == "Home – Giới thiệu đề tài":
-    st.title("📖 Project Introduction")
-    
-    # Phần 1: Problem Overview
-    st.markdown("### 1. Problem Overview")
-    st.info(
-        "The project develops an intelligent sentiment analysis system that automatically classifies product reviews "
-        "into **Positive**, **Neutral**, or **Negative** to support decision-making for e-commerce businesses."
-    )
-
-    col_home1, col_home2 = st.columns(2)
-
-    # Phần 2: Objectives
-    with col_home1:
-        st.markdown("### 2. Objectives")
-        st.markdown("""
-        * ✅ **Analyze customer opinions** from product reviews.
-        * ✅ **Support Vietnamese and English** text.
-        * ✅ **Visualize sentiment distribution** (Charts & Graphs).
-        * ✅ **Provide real-time sentiment prediction** for new inputs.
-        """)
-
-    # Phần 3: Technologies
-    with col_home2:
-        st.markdown("### 3. Technologies")
-        st.markdown("""
-        * **Core:** 🐍 Python, 🔴 Streamlit
-        * **Processing:** Scikit-learn, TF-IDF
-        * **Models:** * 🔹 Logistic Regression
-            * 🔹 SVM (Support Vector Machine)
-            * 🔹 XGBoost (Optional)
-        """)
+    # Dùng container nền trắng để nội dung dễ đọc trên nền sọc
+    with st.container():
+        st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
         
-    st.image("https://miro.medium.com/v2/resize:fit:1400/1*p3_wO5j2h7jQ6bC-uP4u2A.png", caption="Sentiment Analysis Workflow Illustration", use_column_width=True)
+        st.title("📖 Project Introduction")
+        
+        # Phần 1: Problem Overview
+        st.markdown("### 1. Problem Overview")
+        st.info(
+            "The project develops an intelligent sentiment analysis system that automatically classifies product reviews "
+            "into **Positive**, **Neutral**, or **Negative** to support decision-making for e-commerce businesses."
+        )
+
+        col_home1, col_home2 = st.columns(2)
+
+        # Phần 2: Objectives
+        with col_home1:
+            st.markdown("### 2. Objectives")
+            st.markdown("""
+            * ✅ **Analyze customer opinions** from product reviews.
+            * ✅ **Support Vietnamese and English** text.
+            * ✅ **Visualize sentiment distribution** (Charts & Graphs).
+            * ✅ **Provide real-time sentiment prediction** for new inputs.
+            """)
+
+        # Phần 3: Technologies
+        with col_home2:
+            st.markdown("### 3. Technologies")
+            st.markdown("""
+            * **Core:** 🐍 Python, 🔴 Streamlit
+            * **Processing:** Scikit-learn, TF-IDF
+            * **Models:** * 🔹 Logistic Regression
+                * 🔹 SVM (Support Vector Machine)
+                * 🔹 XGBoost (Optional)
+            """)
+            
+        st.image("https://miro.medium.com/v2/resize:fit:1400/1*p3_wO5j2h7jQ6bC-uP4u2A.png", caption="Sentiment Analysis Workflow Illustration", use_column_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # --- TRANG EDA ---
 elif page == "EDA – Khám phá dữ liệu":
-    st.header("📊 Exploratory Data Analysis (EDA)")
-    st.markdown("Phân tích sơ bộ về tập dữ liệu đánh giá sản phẩm.")
-    
-    col_eda1, col_eda2 = st.columns(2)
-    with col_eda1:
-        st.subheader("Phân bố nhãn cảm xúc")
-        # Giả lập dữ liệu demo
-        chart_data = pd.DataFrame({'Sentiment': ['Positive', 'Negative', 'Neutral'], 'Count': [500, 300, 150]})
-        st.bar_chart(chart_data.set_index('Sentiment'))
-    
-    with col_eda2:
-        st.subheader("Thống kê từ khóa")
-        st.info("Biểu đồ WordCloud hoặc Top Keyword sẽ hiển thị ở đây.")
+    with st.container():
+        st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
+        st.header("📊 Exploratory Data Analysis (EDA)")
+        st.markdown("Phân tích sơ bộ về tập dữ liệu đánh giá sản phẩm.")
+        
+        col_eda1, col_eda2 = st.columns(2)
+        with col_eda1:
+            st.subheader("Phân bố nhãn cảm xúc")
+            chart_data = pd.DataFrame({'Sentiment': ['Positive', 'Negative', 'Neutral'], 'Count': [500, 300, 150]})
+            st.bar_chart(chart_data.set_index('Sentiment'))
+        
+        with col_eda2:
+            st.subheader("Thống kê từ khóa")
+            st.info("Biểu đồ WordCloud hoặc Top Keyword sẽ hiển thị ở đây.")
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # --- TRANG ANALYSIS ---
 elif page == "Analysis – Sentiment Analysis":
@@ -138,17 +181,20 @@ elif page == "Analysis – Sentiment Analysis":
 
 # --- TRANG MODEL COMPARISON ---
 elif page == "Model Comparison – So sánh mô hình":
-    st.header("⚖️ Model Comparison")
-    st.markdown("So sánh hiệu quả giữa các thuật toán Machine Learning.")
-    
-    data = {
-        "Model": ["Logistic Regression", "Naive Bayes", "SVM", "Random Forest"],
-        "Accuracy": ["88%", "85%", "89%", "86%"],
-        "F1-Score": ["0.87", "0.84", "0.88", "0.85"],
-        "Training Time": ["Low", "Very Low", "High", "Medium"]
-    }
-    df = pd.DataFrame(data)
-    st.table(df)
+    with st.container():
+        st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
+        st.header("⚖️ Model Comparison")
+        st.markdown("So sánh hiệu quả giữa các thuật toán Machine Learning.")
+        
+        data = {
+            "Model": ["Logistic Regression", "Naive Bayes", "SVM", "Random Forest"],
+            "Accuracy": ["88%", "85%", "89%", "86%"],
+            "F1-Score": ["0.87", "0.84", "0.88", "0.85"],
+            "Training Time": ["Low", "Very Low", "High", "Medium"]
+        }
+        df = pd.DataFrame(data)
+        st.table(df)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # --- TRANG TRAINING INFO ---
 elif page == "Training Info – Thông tin mô hình":
@@ -160,85 +206,87 @@ elif page == "Training Info – Thông tin mô hình":
 
 # --- TRANG FUTURE SCOPE ---
 elif page == "Future Scope – Hướng phát triển":
-    st.header("🚀 Hướng phát triển & Kết luận")
-    st.markdown("""
-    ### 1. Kết luận
-    - Dự án đã xây dựng thành công mô hình phân tích cảm xúc cho E-commerce.
-    - Giao diện trực quan hỗ trợ người dùng doanh nghiệp ra quyết định nhanh chóng.
+    with st.container():
+        st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
+        st.header("🚀 Hướng phát triển & Kết luận")
+        st.markdown("""
+        ### 1. Kết luận
+        - Dự án đã xây dựng thành công mô hình phân tích cảm xúc cho E-commerce.
+        - Giao diện trực quan hỗ trợ người dùng doanh nghiệp ra quyết định nhanh chóng.
 
-    ### 2. Hạn chế
-    - Dữ liệu huấn luyện còn giới hạn.
-    - Xử lý ngôn ngữ tự nhiên tiếng Việt phức tạp (teencode, viết tắt).
+        ### 2. Hạn chế
+        - Dữ liệu huấn luyện còn giới hạn.
+        - Xử lý ngôn ngữ tự nhiên tiếng Việt phức tạp (teencode, viết tắt).
 
-    ### 3. Hướng phát triển (Future Work)
-    - **Mở rộng dữ liệu:** Crawl thêm từ Shopee/Lazada.
-    - **Deep Learning:** Áp dụng BERT/RoBERTa.
-    """)
+        ### 3. Hướng phát triển (Future Work)
+        - **Mở rộng dữ liệu:** Crawl thêm từ Shopee/Lazada.
+        - **Deep Learning:** Áp dụng BERT/RoBERTa.
+        """)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================
-# 👣 FOOTER
+# 👣 FOOTER (THIẾT KẾ MỚI)
 # ==========================
 st.markdown("---")
 
-# -------- STUDENTS BOX (MÀU CAM ĐÀO & ĐỎ THẪM) --------
-st.markdown(
-    """
-    <div style="
-        background:#E58E61; /* Sử dụng màu Cam đào làm nền */
-        border:2px solid #A20409; /* Sử dụng màu Đỏ thẫm làm viền */
-        border-radius:10px;
-        padding:16px 20px;
-        max-width:900px;
-        margin: 0 auto 14px auto;
-        font-size:14px;
-        line-height:1.7;
-        color: #F0EBD6; /* Màu chữ Kem nhạt */
-    ">
-        <b>Students:</b><br>
-        - Bui Duc Nguyen-235053154-nguyenbd23@uef.edu.vn<br>
-        - Huynh Ngoc Minh Quan-235052863-quanhnm@uef.edu.vn
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+# Sử dụng st.columns để canh giữa đẹp hơn
+_, col_footer, _ = st.columns([1, 8, 1])
 
-# -------- INSTRUCTOR BOX (MÀU XANH Ô LIU & XANH BẠC HÀ) --------
-st.markdown(
-    """
-    <div style="
-        background:#9BBA74; /* Sử dụng màu Xanh ô liu làm nền */
-        border:2px solid #BBDEA4; /* Sử dụng màu Xanh bạc hà làm viền */
-        border-radius:10px;
-        padding:14px 20px;
-        max-width:900px;
-        margin: 0 auto;
-        font-size:14px;
-        display:flex;
-        align-items:center;
-        gap:10px;
-        color: #F0EBD6; /* Màu chữ Kem nhạt */
-    ">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/0/06/ORCID_iD.svg"
-             width="22">
-        <div>
-            <b>Bùi Tiến Đức</b> –
+with col_footer:
+    # -------- STUDENTS BOX (CARD STYLE) --------
+    # Viền trái màu Đỏ thẫm (#A20409)
+    st.markdown(
+        """
+        <div class="info-card" style="border-left: 10px solid #A20409;">
+            <h4 style="color:#A20409; margin-top:0;">🎓 Students Group</h4>
+            <div style="color:#555;">
+                <b>1. Bui Duc Nguyen</b> - 235053154 - nguyenbd23@uef.edu.vn<br>
+                <b>2. Huynh Ngoc Minh Quan</b> - 235052863 - quanhnm@uef.edu.vn
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # -------- INSTRUCTOR BOX (CARD STYLE) --------
+    # Viền trái màu Xanh Olive (#9BBA74)
+    st.markdown(
+        """
+        <div class="info-card" style="border-left: 10px solid #9BBA74; display:flex; align-items:center; gap:15px;">
+             <div>
+                <h4 style="color:#9BBA74; margin:0;">👨‍🏫 Instructor</h4>
+            </div>
+            <div style="flex-grow:1; border-left:1px solid #ddd; padding-left:15px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                     <img src="https://upload.wikimedia.org/wikipedia/commons/0/06/ORCID_iD.svg" width="20">
+                     <span style="font-weight:bold; color:#333;"><b>Bùi Tiến Đức</b> –
             <a href="https://orcid.org/"
                target="_blank"
-               style="text-decoration:none; color:#F0EBD6;"> </a>
+               style="text-decoration:none; color:#1a73e8;">
+            </a>
+                </div>
+            </div>
         </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+        """,
+        unsafe_allow_html=True
+    )
 
 # -------- COPYRIGHT --------
 st.markdown(
     """
     <div style="
         text-align:center;
-        margin-top:10px;
+        margin-top:20px;
+        padding:10px;
         font-size:13px;
-        color:#A20409; /* Màu chữ Đỏ thẫm */
+        color:#A20409;
+        font-weight:bold;
+        background-color: rgba(255,255,255,0.6);
+        border-radius: 20px;
+        display: inline-block;
+        margin-left: auto;
+        margin-right: auto;
+        width: 100%;
     ">
         © 2025 – Topic 5: Sentiment Analysis for E-Commerce
     </div>
