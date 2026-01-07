@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 # ==========================
-# 🎨 CSS STYLING (BACKGROUND SỌC & KHUNG CARD)
+# 🎨 CSS STYLING (BACKGROUND SỌC, CARD & TABLE)
 # ==========================
 # Bảng màu: #A20409 (Đỏ), #E58E61 (Cam), #F0EBD6 (Kem), #BBDEA4 (Xanh nhạt), #9BBA74 (Xanh Olive)
 
@@ -53,12 +53,32 @@ css_style = """
     font-family: sans-serif;
     color: #333;
 }
-
-/* Hiệu ứng hover cho khung */
 .info-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 6px 15px rgba(0,0,0,0.15);
     transition: all 0.3s ease;
+}
+
+/* 5. TABLE STYLING (Đồng bộ bảng màu trắng) */
+/* Áp dụng cho st.table (Model Comparison, Training Info...) */
+div[data-testid="stTable"] > table {
+    background-color: #ffffff !important; /* Nền trắng tuyệt đối */
+    color: #333333 !important;           /* Chữ màu đen xám */
+    border-radius: 10px;                 /* Bo góc bảng */
+    overflow: hidden;
+    border: 1px solid #ddd;              /* Viền nhẹ */
+}
+
+/* Header của bảng (Hàng tiêu đề) */
+div[data-testid="stTable"] th {
+    background-color: #E58E61 !important; /* Màu Cam đào làm nền header */
+    color: white !important;              /* Chữ trắng */
+    font-weight: bold;
+}
+
+/* Dòng chẵn lẻ (Optional: giúp dễ nhìn hơn) */
+div[data-testid="stTable"] tr:nth-child(even) {
+    background-color: #f9f9f9 !important;
 }
 
 </style>
@@ -114,13 +134,11 @@ page = st.sidebar.radio(
 
 # --- TRANG HOME ---
 if page == "Home – Giới thiệu đề tài":
-    # Dùng container nền trắng để nội dung dễ đọc trên nền sọc
     with st.container():
         st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
         
         st.title("📖 Project Introduction")
         
-        # Phần 1: Problem Overview
         st.markdown("### 1. Problem Overview")
         st.info(
             "The project develops an intelligent sentiment analysis system that automatically classifies product reviews "
@@ -129,7 +147,6 @@ if page == "Home – Giới thiệu đề tài":
 
         col_home1, col_home2 = st.columns(2)
 
-        # Phần 2: Objectives
         with col_home1:
             st.markdown("### 2. Objectives")
             st.markdown("""
@@ -139,16 +156,15 @@ if page == "Home – Giới thiệu đề tài":
             * ✅ **Provide real-time sentiment prediction** for new inputs.
             """)
 
-        # Phần 3: Technologies
         with col_home2:
             st.markdown("### 3. Technologies")
             st.markdown("""
             * **Core:** 🐍 Python, 🔴 Streamlit
             * **Processing:** Scikit-learn, TF-IDF
-            * **Models:** 
-                    *  Logistic Regression
-                    *  SVM (Support Vector Machine)
-                    *  XGBoost (Optional)
+            * **Models:**
+                * 🔹 Logistic Regression
+                * 🔹 SVM (Support Vector Machine)
+                * 🔹 XGBoost (Optional)
             """)
             
         st.image("https://miro.medium.com/v2/resize:fit:1400/1*p3_wO5j2h7jQ6bC-uP4u2A.png", caption="Sentiment Analysis Workflow Illustration", use_column_width=True)
@@ -187,6 +203,7 @@ elif page == "Model Comparison – So sánh mô hình":
         st.header("⚖️ Model Comparison")
         st.markdown("So sánh hiệu quả giữa các thuật toán Machine Learning.")
         
+        # Dữ liệu mẫu
         data = {
             "Model": ["Logistic Regression", "Naive Bayes", "SVM", "Random Forest"],
             "Accuracy": ["88%", "85%", "89%", "86%"],
@@ -194,11 +211,15 @@ elif page == "Model Comparison – So sánh mô hình":
             "Training Time": ["Low", "Very Low", "High", "Medium"]
         }
         df = pd.DataFrame(data)
+        
+        # Hiển thị bảng (CSS phía trên sẽ tự động làm bảng này màu trắng)
         st.table(df)
+        
         st.markdown('</div>', unsafe_allow_html=True)
 
 # --- TRANG TRAINING INFO ---
 elif page == "Training Info – Thông tin mô hình":
+    # CSS cũng sẽ tự động áp dụng cho bảng trong file Training_Info.py nếu bạn dùng st.table()
     try:
         from pages.Training_Info import show
         show()
@@ -226,16 +247,14 @@ elif page == "Future Scope – Hướng phát triển":
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================
-# 👣 FOOTER (THIẾT KẾ MỚI)
+# 👣 FOOTER (CARD STYLE)
 # ==========================
 st.markdown("---")
 
-# Sử dụng st.columns để canh giữa đẹp hơn
 _, col_footer, _ = st.columns([1, 8, 1])
 
 with col_footer:
-    # -------- STUDENTS BOX (CARD STYLE) --------
-    # Viền trái màu Đỏ thẫm (#A20409)
+    # -------- STUDENTS BOX --------
     st.markdown(
         """
         <div class="info-card" style="border-left: 10px solid #A20409;">
@@ -249,8 +268,7 @@ with col_footer:
         unsafe_allow_html=True
     )
 
-    # -------- INSTRUCTOR BOX (CARD STYLE) --------
-    # Viền trái màu Xanh Olive (#9BBA74)
+    # -------- INSTRUCTOR BOX --------
     st.markdown(
         """
         <div class="info-card" style="border-left: 10px solid #9BBA74; display:flex; align-items:center; gap:15px;">
@@ -260,12 +278,7 @@ with col_footer:
             <div style="flex-grow:1; border-left:1px solid #ddd; padding-left:15px;">
                 <div style="display:flex; align-items:center; gap:8px;">
                      <img src="https://upload.wikimedia.org/wikipedia/commons/0/06/ORCID_iD.svg" width="20">
-                     <span style="font-weight:bold; color:#333;"><b>Bùi Tiến Đức</b> –
-        <a href="https://orcid.org/0000-0001-5174-3558"
-           target="_blank"
-           style="text-decoration:none; color:#0073e6;">
-           ORCID: 0000-0001-5174-3558
-        </a>
+                     <span style="font-weight:bold; color:#333;">Bùi Tiến Đức</span>
                 </div>
             </div>
         </div>
