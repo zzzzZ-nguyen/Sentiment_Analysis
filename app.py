@@ -260,10 +260,11 @@ with col_footer:
                 <div style="display:flex; align-items:center; gap:8px;">
                      <img src="https://upload.wikimedia.org/wikipedia/commons/0/06/ORCID_iD.svg" width="20">
                      <span style="font-weight:bold; color:#333;"><b>Bùi Tiến Đức</b> –
-            <a href="https://orcid.org/"
-               target="_blank"
-               style="text-decoration:none; color:#1a73e8;">
-            </a>
+        <a href="https://orcid.org/0000-0001-5174-3558"
+           target="_blank"
+           style="text-decoration:none; color:#0073e6;">
+           ORCID: 0000-0001-5174-3558
+        </a>
                 </div>
             </div>
         </div>
