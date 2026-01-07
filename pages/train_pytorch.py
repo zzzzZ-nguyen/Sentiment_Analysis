@@ -6,6 +6,7 @@ import sys
 import pickle
 import time
 from collections import Counter
+import matplotlib.pyplot as plt # Thêm để vẽ biểu đồ đẹp hơn
 
 # Import utils
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -19,36 +20,24 @@ try:
 except ImportError:
     HAS_DEPS = False
 
+# ... (Giữ nguyên hàm process_dataframe như cũ) ...
 def process_dataframe(df, text_col, label_col):
+    # Copy lại hàm process_dataframe từ câu trả lời trước
+    # (Để ngắn gọn mình không paste lại đoạn xử lý data ở đây, 
+    # bạn giữ nguyên logic xử lý data nhé)
     df = df.dropna(subset=[text_col, label_col])
-    
-    # 1. Xử lý Label (QUAN TRỌNG: Quy định rõ ràng)
-    y_data = []
-    # Nếu label là chuỗi (Negative/Positive)
     if df[label_col].dtype == object:
         y_data = [1 if str(x).lower() in ['pos', 'positive', 'tốt', '1'] else 0 for x in df[label_col]]
-    # Nếu label là số (1-5 sao hoặc 0-1)
     else:
-        # Giả sử thang 5 sao: >=4 là Tốt (1), <=3 là Xấu (0)
-        # Giả sử thang 0-1: >0.5 là Tốt
         y_data = [1 if float(x) >= 4 or (float(x) == 1 and df[label_col].max() == 1) else 0 for x in df[label_col]]
-
-    # 2. Xử lý Text dùng hàm chung
-    reviews_cleaned = [clean_text(str(r)) for r in df[text_col]]
     
-    # 3. Tạo bộ từ điển (Vocab)
+    reviews_cleaned = [clean_text(str(r)) for r in df[text_col]]
     all_words = [w for sublist in reviews_cleaned for w in sublist]
     count_words = Counter(all_words)
-    # Chỉ lấy từ xuất hiện > 1 lần để giảm nhiễu
     sorted_words = [w for w, c in count_words.most_common() if c > 1]
     vocab = {w: i+1 for i, w in enumerate(sorted_words)}
     
-    # 4. Map sang số
-    reviews_int = []
-    for words in reviews_cleaned:
-        reviews_int.append([vocab.get(w, 0) for w in words])
-        
-    # 5. Padding
+    reviews_int = [[vocab.get(w, 0) for w in words] for words in reviews_cleaned]
     seq_len = 50
     features = np.zeros((len(reviews_int), seq_len), dtype=int)
     for i, row in enumerate(reviews_int):
@@ -56,15 +45,27 @@ def process_dataframe(df, text_col, label_col):
         
     X = torch.from_numpy(features)
     y = torch.from_numpy(np.array(y_data)).float()
-    
     return X, y, vocab, None
 
-def show():
-    st.title("🔥 Huấn luyện Model (Label Fix)")
+def save_checkpoint(model, vocab, path_model="models/sentiment_model.pth", path_vocab="models/vocab.pkl"):
+    """Hàm lưu model an toàn"""
+    if not os.path.exists("models"):
+        os.makedirs("models")
     
-    if not HAS_DEPS: st.error("Thiếu thư viện."); return
+    torch.save(model.state_dict(), path_model)
+    with open(path_vocab, "wb") as f:
+        pickle.dump(vocab, f)
 
-    # Chọn file
+def show():
+    st.title("🔥 Huấn luyện & Theo dõi Log")
+    
+    # Kiểm tra trạng thái file hiện tại
+    if os.path.exists("models/sentiment_model.pth"):
+        st.success(f"✅ Đã tìm thấy model cũ tại: `models/sentiment_model.pth`")
+    else:
+        st.warning("⚠️ Chưa thấy file model. Cần huấn luyện ngay.")
+
+    # ... (Phần chọn file giữ nguyên) ...
     data_dir = "data"
     files = [f for f in os.listdir(data_dir) if f.endswith(('.csv', '.xlsx'))] if os.path.exists(data_dir) else []
     
@@ -75,19 +76,27 @@ def show():
         sel_file = st.selectbox("Chọn file:", files)
         path = os.path.join(data_dir, sel_file)
         df = pd.read_csv(path) if sel_file.endswith('.csv') else pd.read_excel(path)
-        st.write(f"Đã tải: {len(df)} dòng.")
-        
     with col2:
         cols = df.columns.tolist()
         text_col = st.selectbox("Cột nội dung:", cols)
         label_col = st.selectbox("Cột nhãn:", cols)
         
-    epochs = st.number_input("Số Epochs:", 1, 50, 10)
+    epochs = st.number_input("Số Epochs:", 1, 100, 5)
     
-    if st.button("🚀 Train Lại Từ Đầu"):
+    col_btn, col_info = st.columns([1, 2])
+    
+    with col_btn:
+        start_train = st.button("🚀 Bắt đầu Train", type="primary")
+
+    if start_train:
+        st_status = st.empty()
+        st_progress = st.progress(0)
+        st_chart = st.empty()
+        
+        st_status.info("⏳ Đang xử lý dữ liệu...")
         X, y, vocab, err = process_dataframe(df, text_col, label_col)
         
-        # Train Loop (Rút gọn)
+        # Setup Model
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dataset = TensorDataset(X, y)
         loader = DataLoader(dataset, batch_size=32, shuffle=True)
@@ -96,11 +105,13 @@ def show():
         model = SentimentLSTM(vocab_size, EMBEDDING_DIM, HIDDEN_DIM, 1, N_LAYERS).to(device)
         criterion = nn.BCELoss(); optimizer = optim.Adam(model.parameters(), lr=0.005)
         
-        bar = st.progress(0)
         model.train()
+        history = [] # Lưu log loss
         
         for e in range(epochs):
+            batch_losses = []
             h = model.init_hidden(32, device)
+            
             for inp, lbl in loader:
                 if inp.size(0) != 32: continue
                 h = tuple([each.data for each in h])
@@ -109,13 +120,32 @@ def show():
                 loss = criterion(out, lbl.to(device))
                 loss.backward()
                 optimizer.step()
-            bar.progress((e+1)/epochs)
+                batch_losses.append(loss.item())
             
-        # Lưu
-        if not os.path.exists("models"): os.makedirs("models")
-        torch.save(model.state_dict(), "models/sentiment_model.pth")
-        with open("models/vocab.pkl", "wb") as f: pickle.dump(vocab, f)
+            # Tính loss trung bình epoch
+            avg_loss = np.mean(batch_losses)
+            history.append(avg_loss)
+            
+            # Update UI
+            st_status.text(f"Epoch {e+1}/{epochs} - Loss: {avg_loss:.4f}")
+            st_progress.progress((e+1)/epochs)
+            
+            # Vẽ biểu đồ realtime
+            fig, ax = plt.subplots(figsize=(6, 2))
+            ax.plot(history, marker='o', color='green')
+            ax.set_title("Loss History")
+            st_chart.pyplot(fig)
+            plt.close(fig)
+
+            # === QUAN TRỌNG: LƯU CHECKPOINT SAU MỖI EPOCH ===
+            save_checkpoint(model, vocab)
         
-        st.success("✅ Train xong! Hãy qua trang Analysis kiểm tra.")
+        st_status.success("🎉 Hoàn tất! Model đã được lưu vào thư mục `models/`")
+        st.balloons()
+        
+        # Hiển thị file log CSV (giống yêu cầu của bạn)
+        log_df = pd.DataFrame({'Epoch': range(1, len(history)+1), 'Loss': history})
+        log_df.to_csv("models/history_log.csv", index=False)
+        st.dataframe(log_df)
 
 if __name__ == "__main__": show()
