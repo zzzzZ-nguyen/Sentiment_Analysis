@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 # ==========================
-# 🎨 BACKGROUND (MỚI THÊM)
+# 🎨 BACKGROUND
 # ==========================
 # Tạo background gradient nhẹ nhàng (Xanh mint nhạt -> Trắng)
 page_bg_img = """
@@ -29,7 +29,7 @@ background-color: rgba(0,0,0,0);
 st.markdown(page_bg_img, unsafe_allow_html=True)
 
 # ==========================
-# 🎨 HEADER (CODE CŨ)
+# 🎨 HEADER
 # ==========================
 col1, col2 = st.columns([1, 9])
 
@@ -59,63 +59,87 @@ st.write("---")
 # ==========================
 st.sidebar.markdown("## 🧭 Navigation")
 
-# Cập nhật thêm 3 phần mới vào danh sách
 page = st.sidebar.radio(
     "Go to:",
     [
         "Home – Giới thiệu đề tài",
-        "EDA – Khám phá dữ liệu",           # [MỚI 1]
+        "EDA – Khám phá dữ liệu",
         "Analysis – Sentiment Analysis",
-        "Model Comparison – So sánh mô hình", # [MỚI 2]
+        "Model Comparison – So sánh mô hình",
         "Training Info – Thông tin mô hình",
-        "Future Scope – Hướng phát triển"     # [MỚI 3]
+        "Future Scope – Hướng phát triển"
     ]
 )
 
 # ==========================
-# 📦 ROUTING
+# 📦 ROUTING (NỘI DUNG CHÍNH)
 # ==========================
 
-# --- TRANG CŨ ---
+# --- [CẬP NHẬT] TRANG HOME ---
 if page == "Home – Giới thiệu đề tài":
-    try:
-        from pages.Home import show
-        show()
-    except ImportError:
-        st.info("Đang hiển thị trang Home (Vui lòng tạo file pages/Home.py để ẩn thông báo này)")
-        st.markdown("### Xin chào! Đây là trang giới thiệu đề tài.")
+    st.title("📖 Project Introduction")
+    
+    # Phần 1: Problem Overview
+    st.markdown("### 1. Problem Overview")
+    st.info(
+        "The project develops an intelligent sentiment analysis system that automatically classifies product reviews "
+        "into **Positive**, **Neutral**, or **Negative** to support decision-making for e-commerce businesses."
+    )
 
-# --- [MỚI 1] EDA ---
+    col_home1, col_home2 = st.columns(2)
+
+    # Phần 2: Objectives
+    with col_home1:
+        st.markdown("### 2. Objectives")
+        st.markdown("""
+        * ✅ **Analyze customer opinions** from product reviews.
+        * ✅ **Support Vietnamese and English** text.
+        * ✅ **Visualize sentiment distribution** (Charts & Graphs).
+        * ✅ **Provide real-time sentiment prediction** for new inputs.
+        """)
+
+    # Phần 3: Technologies
+    with col_home2:
+        st.markdown("### 3. Technologies")
+        st.markdown("""
+        * **Core:** 🐍 Python, 🔴 Streamlit
+        * **Processing:** Scikit-learn, TF-IDF
+        * **Models:** * 🔹 Logistic Regression
+            * 🔹 SVM (Support Vector Machine)
+            * 🔹 XGBoost (Optional)
+        """)
+        
+    st.image("https://miro.medium.com/v2/resize:fit:1400/1*p3_wO5j2h7jQ6bC-uP4u2A.png", caption="Sentiment Analysis Workflow Illustration", use_column_width=True)
+
+# --- TRANG EDA ---
 elif page == "EDA – Khám phá dữ liệu":
     st.header("📊 Exploratory Data Analysis (EDA)")
     st.markdown("Phân tích sơ bộ về tập dữ liệu đánh giá sản phẩm.")
     
-    # Demo chart (Bạn có thể thay bằng dữ liệu thật)
     col_eda1, col_eda2 = st.columns(2)
     with col_eda1:
         st.subheader("Phân bố nhãn cảm xúc")
-        # Giả lập dữ liệu
+        # Giả lập dữ liệu demo
         chart_data = pd.DataFrame({'Sentiment': ['Positive', 'Negative', 'Neutral'], 'Count': [500, 300, 150]})
         st.bar_chart(chart_data.set_index('Sentiment'))
     
     with col_eda2:
         st.subheader("Thống kê từ khóa")
-        st.info("Tại đây sẽ hiển thị WordCloud hoặc Top từ khóa xuất hiện nhiều nhất.")
+        st.info("Biểu đồ WordCloud hoặc Top Keyword sẽ hiển thị ở đây.")
 
-# --- TRANG CŨ ---
+# --- TRANG ANALYSIS ---
 elif page == "Analysis – Sentiment Analysis":
     try:
         from pages.Analysis import show
         show()
     except ImportError:
-        st.info("Vui lòng tạo file pages/Analysis.py")
+        st.info("Vui lòng tạo file pages/Analysis.py hoặc thêm code xử lý vào đây.")
 
-# --- [MỚI 2] MODEL COMPARISON ---
+# --- TRANG MODEL COMPARISON ---
 elif page == "Model Comparison – So sánh mô hình":
     st.header("⚖️ Model Comparison")
     st.markdown("So sánh hiệu quả giữa các thuật toán Machine Learning.")
     
-    # Bảng so sánh giả định
     data = {
         "Model": ["Logistic Regression", "Naive Bayes", "SVM", "Random Forest"],
         "Accuracy": ["88%", "85%", "89%", "86%"],
@@ -124,17 +148,16 @@ elif page == "Model Comparison – So sánh mô hình":
     }
     df = pd.DataFrame(data)
     st.table(df)
-    st.success("Nhận xét: SVM cho kết quả tốt nhất nhưng tốn nhiều thời gian huấn luyện hơn.")
 
-# --- TRANG CŨ ---
+# --- TRANG TRAINING INFO ---
 elif page == "Training Info – Thông tin mô hình":
     try:
         from pages.Training_Info import show
         show()
     except ImportError:
-        st.info("Vui lòng tạo file pages/Training_Info.py")
+        st.info("Vui lòng tạo file pages/Training_Info.py hoặc thêm code xử lý vào đây.")
 
-# --- [MỚI 3] FUTURE SCOPE ---
+# --- TRANG FUTURE SCOPE ---
 elif page == "Future Scope – Hướng phát triển":
     st.header("🚀 Hướng phát triển & Kết luận")
     st.markdown("""
@@ -143,21 +166,20 @@ elif page == "Future Scope – Hướng phát triển":
     - Giao diện trực quan hỗ trợ người dùng doanh nghiệp ra quyết định nhanh chóng.
 
     ### 2. Hạn chế
-    - Dữ liệu huấn luyện còn giới hạn ở một số ngành hàng cụ thể.
-    - Chưa xử lý tốt các câu văn mang tính châm biếm (sarcasm).
+    - Dữ liệu huấn luyện còn giới hạn.
+    - Xử lý ngôn ngữ tự nhiên tiếng Việt phức tạp (teencode, viết tắt).
 
     ### 3. Hướng phát triển (Future Work)
-    - **Mở rộng dữ liệu:** Thu thập thêm comment từ Shopee/Lazada thời gian thực.
-    - **Deep Learning:** Áp dụng mô hình BERT/RoBERTa để tăng độ chính xác.
-    - **Đa ngôn ngữ:** Hỗ trợ phân tích cả Tiếng Anh và Tiếng Việt lẫn lộn.
+    - **Mở rộng dữ liệu:** Crawl thêm từ Shopee/Lazada.
+    - **Deep Learning:** Áp dụng BERT/RoBERTa.
     """)
 
 # ==========================
-# 👣 FOOTER (MATCH IMAGE UI - GIỮ NGUYÊN)
+# 👣 FOOTER
 # ==========================
 st.markdown("---")
 
-# -------- STUDENTS BOX (YELLOW) --------
+# -------- STUDENTS BOX --------
 st.markdown(
     """
     <div style="
@@ -178,7 +200,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# -------- INSTRUCTOR BOX (GRAY) --------
+# -------- INSTRUCTOR BOX --------
 st.markdown(
     """
     <div style="
