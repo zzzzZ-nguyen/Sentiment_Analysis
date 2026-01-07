@@ -1,150 +1,202 @@
-import streamlit as st
-import pandas as pd
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
+import collections
 import numpy as np
-import joblib
-import os
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
-# ==================================================
-# ⚙️ CẤU HÌNH TRANG (Bắt buộc phải ở dòng đầu tiên)
-# ==================================================
-st.set_page_config(page_title="Training Info", layout="wide")
+# ==========================================
+# 1. CHUẨN BỊ DỮ LIỆU (DATA PREPARATION)
+# ==========================================
 
-# ==================================================
-# 🎨 CSS (Giữ lại giao diện đẹp của bạn)
-# ==================================================
-st.markdown("""
-<style>
-[data-testid="stAppViewContainer"] {
-    background-color: #F0EBD6;
-    background-image: repeating-linear-gradient(45deg, #F0EBD6, #F0EBD6 20px, #BBDEA4 20px, #BBDEA4 40px);
-}
-div[data-testid="stTable"], div[data-testid="stDataFrame"] {
-    background-color: #ffffff !important;
-    padding: 10px; border-radius: 10px;
-}
-</style>
-""", unsafe_allow_html=True)
+# Dữ liệu bạn cung cấp (đã cắt gọn để demo, bạn có thể paste toàn bộ vào đây)
+raw_data = """
+a	00166146	0.875	0	hấp_dẫn#1	thích nhìn, say mê vẻ đẹp
+a	00362467	0.75	0	vui_vẻ#1	một tinh thần tốt, thể hiện tâm trạng rất vui
+a	00015589	0.125	0.375	dài#9	có hoặc đang được nhiều hơn mức bình thường hoặc cần thiết
+a	00015854	0	0.25	phong_phú#1	có một số lượng lớn
+a	00016247	0.125	0.5	thừa_thãi#1	có rất nhiều
+a	00065064	0.75	0	tích_cực#3	có tác dụng khẳng định, thúc đẩy sự phát triển
+a	00065488	0	0.75	bất_lợi#1	gây thiệt hại
+a	00075515	0	0.75	phủ_định#2	bác bỏ sự tồn tại, sự cần thiết của cái gì
+a	00220082	0.875	0	xinh_đẹp#1	rất xinh, có được sự hài hòa, trông thích nhìn
+a	00193799	0	0.625	khủng_khiếp#1	hoảng sợ hoặc làm cho hoảng sợ ở mức rất cao
+a	00422374	0	0.625	tệ_hại#2	quá tệ và có tác dụng gây những tổn thất lớn
+a	00328528	0.5	0	mạch_lạc#3	diễn đạt trôi trảy, mạch lạc , từng đoạn một
+"""
+# Lưu ý: Hãy copy toàn bộ dữ liệu của bạn vào biến raw_data bên trên nếu muốn train hết.
 
-# ==================================================
-# 📦 LOAD MODEL OBJECTS
-# ==================================================
-@st.cache_resource
-def load_model_objects():
-    # Sửa lại đường dẫn nếu cần: "models/model_en.pkl" hoặc "../models/..."
-    # Thử tìm trong thư mục hiện tại hoặc lùi ra thư mục cha
-    possible_paths = [
-        os.path.join("models", "model_en.pkl"),
-        os.path.join("..", "models", "model_en.pkl") 
-    ]
+def process_data(raw_text):
+    samples = []
+    labels = []
     
-    model_path = None
-    for p in possible_paths:
-        if os.path.exists(p):
-            model_path = p
-            break
+    lines = raw_text.strip().split('\n')
+    for line in lines:
+        parts = line.split('\t')
+        if len(parts) < 6: continue
+        
+        # Lấy điểm số và nội dung
+        pos_score = float(parts[2])
+        neg_score = float(parts[3])
+        gloss_text = parts[5] # Sử dụng phần định nghĩa làm đầu vào huấn luyện
+        
+        # Gán nhãn: 0: Tiêu cực, 1: Tích cực, 2: Trung tính
+        if pos_score > neg_score:
+            label = 1 
+        elif neg_score > pos_score:
+            label = 0
+        else:
+            label = 2 
             
-    # Load giả lập nếu không tìm thấy file để tránh lỗi crash app
-    if not model_path:
-        return None, None
+        samples.append(gloss_text.lower()) # Chuyển về chữ thường
+        labels.append(label)
+    return samples, labels
 
-    try:
-        model = joblib.load(model_path)
-        vectorizer_path = model_path.replace("model_en.pkl", "vectorizer_en.pkl")
-        vectorizer = joblib.load(vectorizer_path)
-        return model, vectorizer
-    except:
-        return None, None
+texts, labels = process_data(raw_data)
 
-# ==================================================
-# 📊 NỘI DUNG CHÍNH (Chạy trực tiếp, KHÔNG dùng def show)
-# ==================================================
+# Xây dựng bộ từ điển (Vocabulary)
+word_counts = collections.Counter(" ".join(texts).split())
+vocab = sorted(word_counts, key=word_counts.get, reverse=True)
+word_to_idx = {word: i+1 for i, word in enumerate(vocab)} # 0 dành cho padding
+word_to_idx['<PAD>'] = 0
+vocab_size = len(word_to_idx)
 
-st.markdown("<h2 style='color:#A20409;'>⚙️ Training Info – Sentiment Analysis</h2>", unsafe_allow_html=True)
-st.write("Thông tin chi tiết về quá trình huấn luyện và đánh giá mô hình.")
-st.write("---")
+# Hyper-parameters (Đã chỉnh sửa cho phù hợp với Text)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+sequence_length = 20    # Độ dài tối đa của 1 câu
+input_size = 64         # Kích thước vector nhúng (Embedding dim)
+hidden_size = 128
+num_layers = 2
+num_classes = 3         # 3 lớp: Neg, Pos, Neu
+batch_size = 5          # Giảm batch size vì dữ liệu ít
+num_epochs = 20         # Tăng epoch để máy kịp học
+learning_rate = 0.005
 
-# Load Model
-model, vectorizer = load_model_objects()
+# Hàm mã hóa câu văn thành các con số
+def encode_text(text, max_len):
+    tokens = text.split()
+    vec = [word_to_idx.get(token, 0) for token in tokens] # 0 nếu từ không có trong từ điển
+    if len(vec) < max_len:
+        vec += [0] * (max_len - len(vec)) # Padding
+    else:
+        vec = vec[:max_len] # Cắt bớt
+    return vec
 
-# --- 1. DATASET ---
-st.subheader("1️⃣ Raw Dataset")
-raw_data = pd.DataFrame({
-    "review": [
-        "Sản phẩm rất tốt", "Chất lượng kém, thất vọng", "This product is amazing", 
-        "Bad quality, waste of money", "Average product", "Really loved it",
-        "Terrible experience", "Normal quality", "Excellent service", "Don't buy this"
-    ],
-    "label": [
-        "positive", "negative", "positive", 
-        "negative", "neutral", "positive",
-        "negative", "neutral", "positive", "negative"
-    ]
-})
-st.dataframe(raw_data)
-st.write("---")
-
-# --- 2. PREPROCESSING ---
-st.subheader("2️⃣ Preprocessed Data")
-processed_data = raw_data.copy()
-processed_data["review_clean"] = processed_data["review"].str.lower()
-st.dataframe(processed_data.head())
-st.write("---")
-
-# --- 3. MODEL INFO ---
-st.subheader("3️⃣ Model Information")
-if model and vectorizer:
-    c1, c2 = st.columns(2)
-    with c1:
-        st.info(f"**Model:** {type(model).__name__}")
-        st.write(f"Classes: {model.classes_}")
-    with c2:
-        st.success(f"**Vectorizer:** {type(vectorizer).__name__}")
-        st.write(f"Vocab Size: {len(vectorizer.vocabulary_)}")
-else:
-    st.warning("⚠️ Đang chạy chế độ Demo (Chưa tìm thấy file model thật).")
-
-st.write("---")
-
-# --- 4. RESULTS & VISUALIZATION ---
-st.subheader("4️⃣ Training Results & Visualization")
-
-# Nếu có model thật thì tính toán, không thì dùng số liệu giả lập
-if model and vectorizer:
-    X_test = vectorizer.transform(processed_data["review_clean"])
-    y_true = processed_data["label"]
-    y_pred = model.predict(X_test)
+# Dataset Class tùy chỉnh
+class SentimentDataset(Dataset):
+    def __init__(self, texts, labels):
+        self.texts = texts
+        self.labels = labels
+        
+    def __len__(self):
+        return len(self.texts)
     
-    acc = accuracy_score(y_true, y_pred)
-    f1 = f1_score(y_true, y_pred, average='weighted', zero_division=0)
+    def __getitem__(self, idx):
+        text_vec = encode_text(self.texts[idx], sequence_length)
+        return torch.tensor(text_vec, dtype=torch.long), torch.tensor(self.labels[idx], dtype=torch.long)
+
+# Chia dữ liệu train/test
+full_dataset = SentimentDataset(texts, labels)
+train_size = int(0.8 * len(full_dataset))
+test_size = len(full_dataset) - train_size
+train_dataset, test_dataset = torch.utils.data.random_split(full_dataset, [train_size, test_size])
+
+train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
+test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
+
+# ==========================================
+# 2. XÂY DỰNG MODEL (BiRNN cho Text)
+# ==========================================
+
+class BiRNN_Text(nn.Module):
+    def __init__(self, vocab_size, embed_size, hidden_size, num_layers, num_classes):
+        super(BiRNN_Text, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        
+        # LỚP MỚI QUAN TRỌNG: Embedding layer chuyển số nguyên thành vector
+        self.embedding = nn.Embedding(vocab_size, embed_size)
+        
+        self.lstm = nn.LSTM(embed_size, hidden_size, num_layers, batch_first=True, bidirectional=True)
+        self.fc = nn.Linear(hidden_size*2, num_classes) 
     
-    classes_list = model.classes_
-    cm_values = confusion_matrix(y_true, y_pred, labels=classes_list)
-else:
-    # Fallback data nếu không có model
-    acc, f1 = 0.86, 0.84
-    classes_list = ["negative", "neutral", "positive"]
-    cm_values = np.array([[3, 1, 0], [0, 2, 0], [0, 0, 4]])
-    y_pred = ["positive"] * 10 # Dummy
+    def forward(self, x):
+        # x shape: (batch_size, sequence_length)
+        
+        # Chuyển qua lớp Embedding
+        # out shape: (batch_size, sequence_length, embed_size)
+        out = self.embedding(x)
+        
+        # Set initial states
+        h0 = torch.zeros(self.num_layers*2, x.size(0), self.hidden_size).to(device) 
+        c0 = torch.zeros(self.num_layers*2, x.size(0), self.hidden_size).to(device)
+        
+        # Forward propagate LSTM
+        out, _ = self.lstm(out, (h0, c0)) 
+        
+        # Decode the hidden state of the last time step
+        out = self.fc(out[:, -1, :])
+        return out
 
-# Hiển thị Metrics
-m1, m2 = st.columns(2)
-m1.metric("Accuracy", f"{acc*100:.1f}%")
-m2.metric("F1-Score", f"{f1:.4f}")
+model = BiRNN_Text(vocab_size, input_size, hidden_size, num_layers, num_classes).to(device)
 
-# Hiển thị Confusion Matrix (Dùng Dataframe tô màu thay vì matplotlib để tránh lỗi)
-st.markdown("##### Confusion Matrix")
-cm_df = pd.DataFrame(cm_values, index=classes_list, columns=classes_list)
-st.dataframe(cm_df.style.background_gradient(cmap="Oranges"))
+# ==========================================
+# 3. TRAINING VÀ TESTING
+# ==========================================
 
-st.write("---")
+# Loss and optimizer
+criterion = nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    
+# Train the model
+total_step = len(train_loader)
+print("Bắt đầu training...")
+for epoch in range(num_epochs):
+    for i, (text_vecs, labels) in enumerate(train_loader):
+        text_vecs = text_vecs.to(device)
+        labels = labels.to(device)
+        
+        # Forward pass
+        outputs = model(text_vecs)
+        loss = criterion(outputs, labels)
+        
+        # Backward and optimize
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+    if (epoch+1) % 5 == 0:
+        print ('Epoch [{}/{}], Loss: {:.4f}'.format(epoch+1, num_epochs, loss.item()))
 
-# --- 5. CONFIDENCE ---
-st.subheader("5️⃣ Model Confidence")
-# Tạo data giả lập cho phần hiển thị
-conf_data = pd.DataFrame({
-    "Review": processed_data["review"],
-    "Prediction": y_pred, # Lấy từ kết quả trên
-    "Confidence": np.random.uniform(0.7, 0.99, size=len(processed_data)) # Random demo
-})
-st.dataframe(conf_data.style.background_gradient(subset=["Confidence"], cmap="Greens"))
+# Test the model
+model.eval() # Chuyển sang chế độ đánh giá (tắt dropout, v.v.)
+with torch.no_grad():
+    correct = 0
+    total = 0
+    for text_vecs, labels in test_loader:
+        text_vecs = text_vecs.to(device)
+        labels = labels.to(device)
+        outputs = model(text_vecs)
+        _, predicted = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
+
+    if total > 0:
+        print('Test Accuracy of the model: {} %'.format(100 * correct / total))
+    else:
+        print("Dataset quá nhỏ để chia train/test, hãy thêm dữ liệu vào biến raw_data.")
+
+# Demo thử nghiệm dự đoán 1 câu
+def predict_sentiment(sentence):
+    model.eval()
+    vec = torch.tensor([encode_text(sentence.lower(), sequence_length)], dtype=torch.long).to(device)
+    output = model(vec)
+    _, predicted = torch.max(output.data, 1)
+    mapping = {0: "Tiêu cực", 1: "Tích cực", 2: "Trung tính"}
+    return mapping[predicted.item()]
+
+print("-" * 30)
+sample_text = "rất xinh và đáng yêu"
+print(f"Dự đoán câu '{sample_text}': {predict_sentiment(sample_text)}")
+
+# Save the model checkpoint
+torch.save(model.state_dict(), 'sentiment_model.ckpt')
