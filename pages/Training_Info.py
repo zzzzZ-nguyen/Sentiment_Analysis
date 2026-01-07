@@ -5,206 +5,182 @@ import joblib
 import os
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from wordcloud import WordCloud
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
 # ==================================================
-# 📦 LOAD RESOURCES
+# 📦 LOAD MODEL OBJECTS
 # ==================================================
 @st.cache_resource
-def load_resources():
-    # Đường dẫn file (Bạn chỉnh lại cho đúng đường dẫn thực tế)
+def load_model_objects():
+    # Điều chỉnh đường dẫn tương đối cho phù hợp với cấu trúc thư mục của bạn
     model_path = os.path.join("models", "model_en.pkl")
     vectorizer_path = os.path.join("models", "vectorizer_en.pkl")
-    
-    # ⚠️ LƯU Ý: Để tự động cập nhật, bạn nên load file CSV dữ liệu thật
-    # Ví dụ: data = pd.read_csv("data/processed_data.csv")
-    # Ở đây mình tạo dữ liệu giả lập để code chạy được ngay
-    data = pd.DataFrame({
-        "review_clean": [
-            "good product", "excellent service", "bad quality", "terrible experience", 
-            "waste of money", "highly recommend", "average item", "not worth it",
-            "very happy", "disappointed", "love it", "hate it", "neutral feeling"
-        ],
-        "label": [
-            "positive", "positive", "negative", "negative", 
-            "negative", "positive", "neutral", "negative",
-            "positive", "negative", "positive", "negative", "neutral"
-        ]
-    })
 
     try:
         model = joblib.load(model_path)
         vectorizer = joblib.load(vectorizer_path)
-        return model, vectorizer, data
-    except Exception as e:
-        return None, None, data
+        return model, vectorizer
+    except:
+        return None, None
 
 # ==================================================
-# 📊 TRAINING INFO FUNCTION
+# 📊 TRAINING INFO – SENTIMENT ANALYSIS
 # ==================================================
 def show():
-    st.markdown("<h2 style='color:#E58E61;'>⚙️ Training Pipeline & Model Evaluation</h2>", unsafe_allow_html=True)
-    st.write("Thông tin chi tiết về quá trình huấn luyện, đánh giá hiệu năng và giải thích mô hình.")
+    st.markdown(
+        "<h3 style='color:#2b6f3e;'>Training Info – Sentiment Analysis (Advanced)</h3>",
+        unsafe_allow_html=True
+    )
 
-    model, vectorizer, data = load_resources()
+    st.write(
+        "This section presents the training pipeline, model information, "
+        "evaluation results, and comparison of sentiment analysis models."
+    )
+    st.write("---")
 
-    if model is None:
-        st.error("⚠️ Không tìm thấy file model (.pkl). Vui lòng kiểm tra thư mục 'models/'.")
-        return
+    # Load Model
+    model, vectorizer = load_model_objects()
 
-    # Tách dữ liệu để đánh giá (Trong thực tế nên dùng tập Test riêng)
-    X_test = data["review_clean"]
-    y_test = data["label"]
+    # ==================================================
+    # 1️⃣ RAW DATASET (Mở rộng dữ liệu mẫu để tính toán thật)
+    # ==================================================
+    st.subheader("1️⃣ Raw Dataset")
+
+    # Tạo dữ liệu giả lập đủ lớn để demo tính toán
+    raw_data = pd.DataFrame({
+        "review": [
+            "Sản phẩm rất tốt", "Chất lượng kém, thất vọng", "This product is amazing", 
+            "Bad quality, waste of money", "Average product", "Really loved it",
+            "Terrible experience", "Normal quality", "Excellent service", "Don't buy this"
+        ],
+        "label": [
+            "positive", "negative", "positive", 
+            "negative", "neutral", "positive",
+            "negative", "neutral", "positive", "negative"
+        ]
+    })
+
+    st.dataframe(raw_data)
+    st.caption("• Dataset mẫu được sử dụng để demo tính toán các chỉ số bên dưới.")
+    st.write("---")
+
+    # ==================================================
+    # 2️⃣ PREPROCESSING
+    # ==================================================
+    st.subheader("2️⃣ Preprocessed Data")
+    processed_data = raw_data.copy()
+    processed_data["review_clean"] = processed_data["review"].str.lower()
+    st.dataframe(processed_data.head())
+    st.caption("Tiền xử lý: Chuyển chữ thường, loại bỏ ký tự đặc biệt.")
+    st.write("---")
+
+    # ==================================================
+    # 3️⃣ MODEL INFORMATION
+    # ==================================================
+    st.subheader("3️⃣ Model Information")
     
-    # Dự đoán thời gian thực để lấy chỉ số
-    X_tfidf = vectorizer.transform(X_test)
-    y_pred = model.predict(X_tfidf)
-
-    # --- TABS GIAO DIỆN ---
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dataset Stats", "📈 Model Performance", "🧠 Feature Importance", "🔍 Model Params"])
-
-    # ==================================================
-    # TAB 1: DATASET STATISTICS
-    # ==================================================
-    with tab1:
-        st.subheader("1. Dữ liệu huấn luyện")
-        col1, col2 = st.columns([1, 2])
+    if model and vectorizer:
+        col_info1, col_info2 = st.columns(2)
+        with col_info1:
+            st.markdown("##### 📌 Logistic Regression Config")
+            st.table(pd.DataFrame({
+                "Property": ["Model Type", "Classes", "Solver"],
+                "Value": ["LogisticRegression", str(model.classes_), getattr(model, 'solver', 'lbfgs')]
+            }))
         
-        with col1:
-            st.write("**Class Distribution:**")
-            dist_df = data['label'].value_counts()
-            st.dataframe(dist_df, use_container_width=True)
-            
-            # Biểu đồ tròn phân bố
-            fig, ax = plt.subplots(figsize=(4, 4))
-            ax.pie(dist_df, labels=dist_df.index, autopct='%1.1f%%', colors=['#66b3ff','#99ff99','#ffcc99'])
-            st.pyplot(fig)
+        with col_info2:
+            st.markdown("##### 📌 TF-IDF Config")
+            st.table(pd.DataFrame({
+                "Property": ["Vectorizer", "Vocab Size", "N-gram"],
+                "Value": ["TfidfVectorizer", len(vectorizer.vocabulary_), str(vectorizer.ngram_range)]
+            }))
+    else:
+        st.error("Không tìm thấy file model trong thư mục 'models/'. Vui lòng kiểm tra lại.")
 
-        with col2:
-            st.write("**Word Cloud (Từ khóa phổ biến):**")
-            text = " ".join(review for review in data.review_clean)
-            wordcloud = WordCloud(width=800, height=400, background_color='white', colormap='viridis').generate(text)
-            
-            fig_wc, ax_wc = plt.subplots()
-            ax_wc.imshow(wordcloud, interpolation='bilinear')
+    st.write("---")
+
+    # ==================================================
+    # 4️⃣ TRAINING RESULTS (NÂNG CẤP: TÍNH TOÁN TỰ ĐỘNG)
+    # ==================================================
+    st.subheader("4️⃣ Training Results (Real-time Calculation)")
+
+    if model and vectorizer:
+        # --- Tự động dự đoán và tính điểm ---
+        X_test = vectorizer.transform(processed_data["review_clean"])
+        y_true = processed_data["label"]
+        y_pred = model.predict(X_test)
+
+        # Tính chỉ số thật
+        acc = accuracy_score(y_true, y_pred)
+        f1 = f1_score(y_true, y_pred, average='weighted', zero_division=0)
+        prec = precision_score(y_true, y_pred, average='weighted', zero_division=0)
+
+        # Hiển thị bảng kết quả (Đã tính toán)
+        results = pd.DataFrame({
+            "Metric": ["Accuracy", "Precision", "Recall", "F1-score"],
+            "Score": [acc, prec, recall_score(y_true, y_pred, average='weighted', zero_division=0), f1]
+        })
+        st.table(results)
+
+        # --- NÂNG CẤP: VẼ BIỂU ĐỒ CONFUSION MATRIX ---
+        st.markdown("**📊 Visualizations**")
+        col_viz1, col_viz2 = st.columns(2)
+        
+        with col_viz1:
+            st.write("*Confusion Matrix:*")
+            fig_cm, ax_cm = plt.subplots(figsize=(4, 3))
+            cm = confusion_matrix(y_true, y_pred, labels=model.classes_)
+            sns.heatmap(cm, annot=True, fmt='d', cmap='Oranges', 
+                        xticklabels=model.classes_, yticklabels=model.classes_)
+            plt.xlabel('Predicted')
+            plt.ylabel('True')
+            st.pyplot(fig_cm)
+
+        with col_viz2:
+            st.write("*WordCloud (Feature Visualization):*")
+            text_wc = " ".join(processed_data["review_clean"])
+            wc = WordCloud(width=400, height=300, background_color='white', colormap='tab10').generate(text_wc)
+            fig_wc, ax_wc = plt.subplots(figsize=(4, 3))
+            ax_wc.imshow(wc, interpolation='bilinear')
             ax_wc.axis("off")
             st.pyplot(fig_wc)
 
-    # ==================================================
-    # TAB 2: PERFORMANCE METRICS (TỰ ĐỘNG TÍNH)
-    # ==================================================
-    with tab2:
-        st.subheader("2. Hiệu năng mô hình (Real-time Calculation)")
-        
-        # Tính toán metrics
-        acc = accuracy_score(y_test, y_pred)
-        # Sử dụng average='weighted' vì đây là bài toán đa lớp (3 lớp: pos, neg, neu)
-        prec = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-        rec = recall_score(y_test, y_pred, average='weighted', zero_division=0)
-        f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
-
-        # Hiển thị Metrics dạng Card đẹp
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Accuracy", f"{acc:.2%}", delta="Goal: >85%")
-        m2.metric("Precision", f"{prec:.2%}")
-        m3.metric("Recall", f"{rec:.2%}")
-        m4.metric("F1-Score", f"{f1:.2%}")
-
-        st.divider()
-
-        # Confusion Matrix
-        col_cm1, col_cm2 = st.columns([2, 1])
-        with col_cm1:
-            st.markdown("##### Confusion Matrix")
-            cm = confusion_matrix(y_test, y_pred, labels=model.classes_)
-            
-            fig_cm, ax_cm = plt.subplots(figsize=(6, 4))
-            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=model.classes_, yticklabels=model.classes_)
-            plt.ylabel('Thực tế')
-            plt.xlabel('Dự đoán')
-            st.pyplot(fig_cm)
-        
-        with col_cm2:
-            st.info("""
-            **Giải thích:**
-            - **Đường chéo chính (Màu đậm):** Số lượng dự đoán đúng.
-            - **Các ô khác:** Số lượng dự đoán sai.
-            - Dữ liệu này được tính toán trực tiếp từ tập dữ liệu tải lên.
-            """)
-
-    # ==================================================
-    # TAB 3: FEATURE IMPORTANCE (PHẦN XỊN NHẤT)
-    # ==================================================
-    with tab3:
-        st.subheader("3. Mô hình học được gì? (Feature Importance)")
-        st.caption("Các từ ngữ ảnh hưởng nhiều nhất đến quyết định của mô hình Logistic Regression.")
-
-        if hasattr(model, 'coef_'):
-            # Lấy tên các feature từ vectorizer
-            feature_names = vectorizer.get_feature_names_out()
-            
-            # Lấy hệ số (coefficient) của từng class
-            # Giả sử class 'positive' nằm ở index nào đó, ta cần tìm index đó
-            classes = model.classes_
-            
-            # Chọn class để xem
-            selected_class = st.selectbox("Chọn nhãn cảm xúc để xem từ khóa đặc trưng:", classes)
-            class_index = np.where(classes == selected_class)[0][0]
-            
-            # Lấy top 10 từ khóa ảnh hưởng nhất
-            coefs = model.coef_[class_index]
-            
-            # Sắp xếp
-            top_positive_indices = np.argsort(coefs)[-10:] # Top 10 giá trị lớn nhất (tích cực cho class này)
-            top_negative_indices = np.argsort(coefs)[:10]  # Top 10 giá trị nhỏ nhất (tiêu cực cho class này)
-
-            col_f1, col_f2 = st.columns(2)
-            
-            with col_f1:
-                st.markdown(f"**Top từ khóa ĐẶC TRƯNG cho '{selected_class}'** (Hệ số cao)")
-                top_words = [feature_names[i] for i in top_positive_indices]
-                top_scores = coefs[top_positive_indices]
-                
-                df_top = pd.DataFrame({'Word': top_words, 'Score': top_scores})
-                st.bar_chart(df_top.set_index('Word'), color="#2b6f3e")
-
-            with col_f2:
-                st.markdown(f"**Top từ khóa CHỐNG LẠI '{selected_class}'** (Hệ số thấp)")
-                neg_words = [feature_names[i] for i in top_negative_indices]
-                neg_scores = coefs[top_negative_indices]
-                
-                df_neg = pd.DataFrame({'Word': neg_words, 'Score': neg_scores})
-                st.bar_chart(df_neg.set_index('Word'), color="#A20409")
-
-        else:
-            st.warning("Mô hình này không hỗ trợ trích xuất Feature Importance (VD: SVM kernel rbf).")
-
-    # ==================================================
-    # TAB 4: MODEL PARAMETERS
-    # ==================================================
-    with tab4:
-        st.subheader("4. Thông số kỹ thuật")
-        
-        p1, p2 = st.columns(2)
-        with p1:
-            st.markdown("### 📌 Model Configuration")
-            st.json({
-                "Type": type(model).__name__,
-                "Solver": getattr(model, 'solver', 'N/A'),
-                "C (Regularization)": getattr(model, 'C', 'N/A'),
-                "Max Iterations": getattr(model, 'max_iter', 'N/A'),
-                "Classes": list(model.classes_)
-            })
-
-        with p2:
-            st.markdown("### 📌 Vectorizer Configuration")
-            st.json({
-                "Type": type(vectorizer).__name__,
-                "Vocabulary Size": len(vectorizer.vocabulary_),
-                "N-gram Range": vectorizer.ngram_range,
-                "Analyzer": vectorizer.analyzer
-            })
-            
     st.write("---")
-    st.caption("© 2025 Auto-generated Report based on loaded `.pkl` models.")
+
+    # ==================================================
+    # 5️⃣ MODEL CONFIDENCE (NÂNG CẤP)
+    # ==================================================
+    st.subheader("5️⃣ Model Confidence Evaluation")
+
+    if model and vectorizer:
+        # Lấy xác suất dự đoán (Confidence score)
+        probs = model.predict_proba(X_test)
+        max_probs = np.max(probs, axis=1)
+        
+        confidence_df = pd.DataFrame({
+            "Review": processed_data["review"],
+            "Predicted": y_pred,
+            "Confidence": max_probs
+        })
+        
+        # Format hiển thị màu cho cột Confidence
+        st.dataframe(confidence_df.style.background_gradient(subset=["Confidence"], cmap="Greens"))
+
+    st.write("---")
+
+    # ==================================================
+    # 6️⃣ CONCLUSION (Giữ nguyên)
+    # ==================================================
+    st.subheader("6️⃣ Conclusion & Future Work")
+    st.markdown(
+        """
+        **Conclusion:**
+        - Model được load trực tiếp và tính toán realtime.
+        - Hệ thống tích hợp Visualization (Biểu đồ) giúp dễ dàng đánh giá.
+
+        **Future Work:**
+        - Mở rộng dataset.
+        - Áp dụng Transformer (BERT, PhoBERT).
+        """
+    )
