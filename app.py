@@ -290,12 +290,15 @@ with col_footer:
              <div style="min-width: 120px;">
                 <h4 style="color:white; margin:0;">👨‍🏫 Instructor</h4>
             </div>
-            
             <div style="width: 1px; height: 30px; background-color: rgba(255,255,255,0.5);"></div>
-            
             <div style="display: flex; align-items: center; gap: 8px;">
                  <img src="https://orcid.org/sites/default/files/images/orcid_16x16.png" width="20" height="20" style="vertical-align: middle;">
-                 <span style="font-weight:bold; font-size: 16px;">Bùi Tiến Đức</span>
+                 <span style="font-weight:bold; font-size: 16px;"> <b>Bùi Tiến Đức</b> –
+        <a href="https://orcid.org/0000-0001-5174-3558"
+           target="_blank"
+           style="text-decoration:none; color:#0073e6;">
+           ORCID: 0000-0001-5174-3558
+        </a>
             </div>
         </div>
         """,
