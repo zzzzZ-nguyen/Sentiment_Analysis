@@ -83,7 +83,7 @@ st.markdown(
         line-height:1.7;
     ">
         <b>Students:</b><br>
-        - Bui Duc Nguyen-235053154-nguyenbd23@uef.edu.vn<br>
+        - Bui Duc Nguyen-235053154-nguyenbd23@uef.edu.vn
         - Huynh Ngoc Minh Quan-235052863-quanhnm@uef.edu.vn
     </div>
     """,
