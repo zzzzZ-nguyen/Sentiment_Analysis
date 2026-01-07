@@ -1,14 +1,15 @@
 import streamlit as st
-import os
-import pickle
+import pandas as pd
 import numpy as np
+import os
 import sys
+import pickle
 from collections import Counter
 
-# Import Utils
+# --- CẤU HÌNH ĐƯỜNG DẪN IMPORT ---
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 try:
-    from model_utils import SentimentLSTM, EMBEDDING_DIM, HIDDEN_DIM, N_LAYERS, generate_better_data
+    from model_utils import SentimentLSTM, EMBEDDING_DIM, HIDDEN_DIM, N_LAYERS
     import torch
     import torch.nn as nn
     import torch.optim as optim
@@ -17,117 +18,234 @@ try:
 except ImportError:
     HAS_DEPS = False
 
-def preprocess_data():
-    def read_txt(path):
-        if os.path.exists(path):
-            with open(path, 'r', encoding='utf-8') as f: return [line.strip() for line in f if line.strip()]
-        return []
+# ==========================================
+# 1. HÀM ĐỌC DỮ LIỆU THẬT TỪ FOLDER DATA
+# ==========================================
+def load_data_from_folder():
+    data_path = "data" # Thư mục chứa dữ liệu
+    if not os.path.exists(data_path):
+        os.makedirs(data_path)
+        return None, "Thư mục 'data' không tồn tại. Vui lòng tạo và bỏ file CSV/Excel vào."
 
-    pos = read_txt("train_positive_tokenized.txt")
-    neg = read_txt("train_negative_tokenized.txt")
+    files = [f for f in os.listdir(data_path) if f.endswith(('.csv', '.xlsx', '.xls'))]
+    if not files:
+        return None, "Không tìm thấy file .csv hoặc .xlsx nào trong thư mục 'data'."
     
-    if not pos or not neg: return None, None, None, "Thiếu dữ liệu."
+    return files, None
+
+def process_dataframe(df, text_col, label_col):
+    """Chuyển đổi DataFrame thành format training"""
+    # 1. Lọc dữ liệu rỗng
+    df = df.dropna(subset=[text_col, label_col])
     
-    reviews = pos + neg
-    labels = [1]*len(pos) + [0]*len(neg)
+    # 2. Xử lý nhãn (Label) về 0 và 1
+    # Logic: Nếu nhãn là số (1-5 sao): >=4 là 1 (Tốt), <=3 là 0 (Tệ)
+    # Nếu nhãn là chữ (POS/NEG): 'POS'/'Positive' là 1, còn lại 0
     
-    # Tokenize
-    words = " ".join(reviews).split()
+    y_data = []
+    
+    # Kiểm tra kiểu dữ liệu của cột label
+    first_val = df[label_col].iloc[0]
+    
+    try:
+        # Trường hợp Label là số (VD: 1,2,3,4,5 hoặc 0,1)
+        if isinstance(first_val, (int, float, np.number)):
+            # Nếu chỉ có 0 và 1 thì giữ nguyên
+            unique_vals = df[label_col].unique()
+            if set(unique_vals).issubset({0, 1}):
+                y_data = df[label_col].values
+            else:
+                # Nếu là thang điểm 5 (VD: shopee)
+                y_data = [1 if x >= 4 else 0 for x in df[label_col]]
+        else:
+            # Trường hợp Label là chữ
+            y_data = [1 if str(x).lower() in ['pos', 'positive', 'tốt', 'tich cuc', '1'] else 0 for x in df[label_col]]
+    except:
+        return None, None, None, "Lỗi khi xử lý cột Label. Hãy đảm bảo cột Label chứa số hoặc phân loại rõ ràng."
+
+    # 3. Lấy text
+    reviews = df[text_col].astype(str).tolist()
+    
+    # 4. Tokenize (Tách từ và tạo bộ từ điển)
+    # Nối tất cả text lại để đếm từ
+    all_text = " ".join(reviews).lower().replace('.', '').replace(',', '')
+    words = all_text.split()
     count_words = Counter(words)
-    # Lọc bỏ từ xuất hiện quá ít (ít hơn 1 lần)
-    sorted_words = count_words.most_common()
-    vocab = {w: i+1 for i, (w, c) in enumerate(sorted_words)}
     
-    reviews_int = [[vocab.get(w, 0) for w in r.split()] for r in reviews]
+    # Chỉ giữ lại những từ xuất hiện > 1 lần để giảm nhiễu
+    sorted_words = [w for w, c in count_words.most_common() if c > 1]
+    vocab = {w: i+1 for i, w in enumerate(sorted_words)}
     
+    # Mã hóa reviews thành số
+    reviews_int = []
+    for r in reviews:
+        r_clean = r.lower().replace('.', '').replace(',', '').split()
+        reviews_int.append([vocab.get(w, 0) for w in r_clean])
+        
+    # Padding (Cho bằng độ dài 50)
     seq_len = 50
     features = np.zeros((len(reviews_int), seq_len), dtype=int)
     for i, row in enumerate(reviews_int):
         features[i, -min(len(row), seq_len):] = np.array(row)[:seq_len]
         
+    # Convert sang Tensor
     X = torch.from_numpy(features)
-    y = torch.from_numpy(np.array(labels)).float()
+    y = torch.from_numpy(np.array(y_data)).float()
     
     return X, y, vocab, None
 
+# ==========================================
+# 2. GIAO DIỆN CHÍNH
+# ==========================================
 def show():
     st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
-    st.title("🔥 Huấn luyện Model LSTM (Nâng cao)")
-    st.info("Hệ thống sử dụng dữ liệu giả lập chất lượng cao để cải thiện độ chính xác.")
+    st.title("🔥 Train PyTorch với Dữ Liệu Thật")
+    st.write("Huấn luyện mô hình từ các file có trong thư mục `data/`.")
 
     if not HAS_DEPS:
-        st.error("Lỗi: Không tìm thấy thư viện hoặc file model_utils.py")
+        st.error("⚠️ Thiếu file `model_utils.py` hoặc thư viện `torch`.")
         return
 
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        st.subheader("1. Dữ liệu")
-        if st.button("♻️ Tạo mới dữ liệu (2000 câu)"):
-            generate_better_data()
-            st.success("Đã tạo 2000 câu mẫu đa dạng!")
-            
-        st.subheader("2. Huấn luyện")
-        epochs = st.number_input("Epochs", 1, 50, 5) # Data nhiều thì giảm epoch xuống 5 là đủ demo
-        batch_size = st.selectbox("Batch Size", [32, 64], index=0)
-        btn_train = st.button("🚀 Bắt đầu Train")
+    # --- BƯỚC 1: CHỌN FILE DỮ LIỆU ---
+    files, err = load_data_from_folder()
+    
+    if err:
+        st.warning(f"⚠️ {err}")
+        st.info("💡 Hãy copy file dữ liệu (CSV hoặc Excel) vào thư mục `data` của dự án.")
+        return
 
-    with col2:
+    col_file, col_conf = st.columns([1, 2])
+    
+    with col_file:
+        st.subheader("1. Chọn File")
+        selected_file = st.selectbox("Chọn file dữ liệu:", files)
+        file_path = os.path.join("data", selected_file)
+        
+        # Đọc file để lấy tên cột
+        try:
+            if selected_file.endswith('.csv'):
+                df = pd.read_csv(file_path)
+            else:
+                df = pd.read_excel(file_path)
+            st.success(f"Đã đọc {len(df)} dòng dữ liệu.")
+        except Exception as e:
+            st.error(f"Lỗi đọc file: {e}")
+            return
+
+    with col_conf:
+        st.subheader("2. Cấu hình Cột")
+        all_columns = df.columns.tolist()
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            text_col = st.selectbox("Cột chứa nội dung (Review):", all_columns, index=0)
+        with c2:
+            # Cố gắng tự động tìm cột label
+            label_index = 0
+            for i, col in enumerate(all_columns):
+                if col.lower() in ['label', 'rating', 'score', 'sentiment', 'nhãn', 'điểm']:
+                    label_index = i
+                    break
+            label_col = st.selectbox("Cột chứa nhãn (Label/Rating):", all_columns, index=label_index)
+            
+        st.caption("📝 Ví dụ: Cột nội dung là 'comment', cột nhãn là 'rating' (1-5 sao) hoặc 'label' (0/1).")
+
+    st.write("---")
+
+    # --- BƯỚC 2: TRAIN MODEL ---
+    col_train, col_log = st.columns([1, 2])
+    
+    with col_train:
+        st.subheader("3. Huấn luyện")
+        epochs = st.number_input("Số vòng lặp (Epochs):", 1, 100, 5)
+        batch_size = st.selectbox("Batch Size:", [16, 32, 64], index=1)
+        lr = st.select_slider("Learning Rate:", options=[0.01, 0.005, 0.001], value=0.005)
+        
+        btn_train = st.button("🚀 Bắt đầu Train", type="primary")
+
+    with col_log:
+        st.subheader("📈 Tiến trình")
         log_area = st.empty()
-        chart = st.empty()
+        chart_loss = st.empty()
         
         if btn_train:
-            # Check file
-            if not os.path.exists("train_positive_tokenized.txt"):
-                st.error("Chưa có dữ liệu. Hãy bấm 'Tạo mới dữ liệu' trước.")
-                return
-
-            X, y, vocab, err = preprocess_data()
-            if err: st.error(err); return
+            status = st.info("🔄 Đang xử lý dữ liệu...")
             
-            # Setup
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            train_data = TensorDataset(X, y)
-            train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size, drop_last=True)
+            # Xử lý data thật
+            X, y, vocab, err_msg = process_dataframe(df, text_col, label_col)
             
-            vocab_size = len(vocab) + 1
-            model = SentimentLSTM(vocab_size, EMBEDDING_DIM, HIDDEN_DIM, 1, N_LAYERS).to(device)
-            criterion = nn.BCELoss()
-            optimizer = optim.Adam(model.parameters(), lr=0.001)
-            
-            model.train()
-            losses = []
-            
-            progress = st.progress(0)
-            
-            for e in range(epochs):
-                h = model.init_hidden(batch_size, device)
-                batch_losses = []
-                for inputs, labels in train_loader:
-                    h = tuple([each.data for each in h])
-                    inputs, labels = inputs.to(device), labels.to(device)
-                    model.zero_grad()
-                    out, h = model(inputs, h)
-                    loss = criterion(out, labels)
-                    loss.backward()
-                    nn.utils.clip_grad_norm_(model.parameters(), 5)
-                    optimizer.step()
-                    batch_losses.append(loss.item())
+            if err_msg:
+                st.error(err_msg)
+            else:
+                status.info(f"✅ Đã xử lý xong! Vocab: {len(vocab)} từ. Bắt đầu train...")
+                time.sleep(1)
                 
-                avg_loss = np.mean(batch_losses)
-                losses.append(avg_loss)
-                chart.line_chart(losses)
-                log_area.text(f"Epoch {e+1}/{epochs} | Loss: {avg_loss:.4f}")
-                progress.progress((e+1)/epochs)
-            
-            # Lưu model
-            if not os.path.exists("models"): os.makedirs("models")
-            torch.save(model.state_dict(), "models/sentiment_model.pth")
-            with open("models/vocab.pkl", "wb") as f: pickle.dump(vocab, f)
-            
-            st.success("✅ Huấn luyện xong! Model đã học được nhiều từ vựng hơn.")
-            st.balloons()
-    
+                # --- CODE TRAIN (GIỐNG CŨ) ---
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                
+                # Dataset & Loader
+                dataset = TensorDataset(X, y)
+                train_loader = DataLoader(dataset, shuffle=True, batch_size=batch_size, drop_last=False)
+                
+                # Init Model
+                vocab_size = len(vocab) + 1
+                model = SentimentLSTM(vocab_size, EMBEDDING_DIM, HIDDEN_DIM, 1, N_LAYERS)
+                model.to(device)
+                
+                criterion = nn.BCELoss()
+                optimizer = optim.Adam(model.parameters(), lr=lr)
+                
+                model.train()
+                loss_history = []
+                progress_bar = st.progress(0)
+                
+                start_time = time.time()
+                
+                for e in range(epochs):
+                    h = model.init_hidden(batch_size, device)
+                    epoch_losses = []
+                    
+                    for inputs, labels in train_loader:
+                        # Handle batch lẻ
+                        curr_bs = inputs.size(0)
+                        if curr_bs != batch_size:
+                            h = model.init_hidden(curr_bs, device)
+                        else:
+                            h = tuple([each.data for each in h])
+                            
+                        inputs, labels = inputs.to(device), labels.to(device)
+                        
+                        model.zero_grad()
+                        output, h = model(inputs, h)
+                        
+                        loss = criterion(output, labels)
+                        loss.backward()
+                        nn.utils.clip_grad_norm_(model.parameters(), 5)
+                        optimizer.step()
+                        
+                        epoch_losses.append(loss.item())
+                    
+                    avg_loss = np.mean(epoch_losses)
+                    loss_history.append(avg_loss)
+                    
+                    # Update Chart & Log
+                    chart_loss.line_chart(loss_history)
+                    log_area.text(f"Epoch {e+1}/{epochs} | Loss: {avg_loss:.4f}")
+                    progress_bar.progress((e + 1) / epochs)
+                
+                # Lưu Model
+                if not os.path.exists("models"):
+                    os.makedirs("models")
+                torch.save(model.state_dict(), "models/sentiment_model.pth")
+                with open("models/vocab.pkl", "wb") as f:
+                    pickle.dump(vocab, f)
+                
+                status.success("🎉 Huấn luyện hoàn tất! Model đã được lưu.")
+                st.balloons()
+                st.info("👉 Bây giờ bạn có thể qua trang **Analysis** để kiểm tra.")
+
     st.markdown('</div>', unsafe_allow_html=True)
+import time # Import thêm time để sleep
 
 if __name__ == "__main__":
     show()
