@@ -145,9 +145,9 @@ if page == "Home – Giới thiệu đề tài":
             st.markdown("""
             * **Core:** 🐍 Python, 🔴 Streamlit
             * **Processing:** Scikit-learn, TF-IDF
-            * **Models:** * 🔹 Logistic Regression
-                * 🔹 SVM (Support Vector Machine)
-                * 🔹 XGBoost (Optional)
+            * **Models:**  🔹 Logistic Regression
+                 🔹 SVM (Support Vector Machine)
+                 🔹 XGBoost (Optional)
             """)
             
         st.image("https://miro.medium.com/v2/resize:fit:1400/1*p3_wO5j2h7jQ6bC-uP4u2A.png", caption="Sentiment Analysis Workflow Illustration", use_column_width=True)
