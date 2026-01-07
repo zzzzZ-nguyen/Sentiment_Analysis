@@ -3,4 +3,7 @@ streamlit
 pandas
 scikit-learn
 python-docx
-
+numpy
+matplotlib
+seaborn
+wordcloud
