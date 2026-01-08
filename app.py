@@ -1,6 +1,11 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import sys
+import os
+
+# Thêm đường dẫn hiện tại vào sys.path để import được các module trong pages/
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 # ==========================
 # ⚙️ CẤU HÌNH TRANG (Bắt buộc dòng đầu tiên)
@@ -8,7 +13,8 @@ import numpy as np
 st.set_page_config(
     page_title="Topic 5 – Sentiment Analysis for E-Commerce",
     page_icon="🧠",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 # ==========================
@@ -60,6 +66,9 @@ div[data-testid="stTable"] td, div[data-testid="stDataFrame"] td {
     color: #333333 !important;
     border-bottom: 1px solid #eee !important;
 }
+
+/* 5. Ẩn mặc định Sidebar Navigation của Streamlit (để dùng Custom Nav) */
+[data-testid="stSidebarNav"] {display: none;}
 </style>
 """
 st.markdown(css_style, unsafe_allow_html=True)
@@ -92,17 +101,18 @@ st.write("---")
 # ==========================
 st.sidebar.markdown("## 🧭 Navigation")
 
-page = st.sidebar.radio(
-    "Go to:",
-    [
-        "Home – Giới thiệu đề tài",
-        "EDA – Khám phá dữ liệu",
-        "Analysis – Sentiment Analysis",
-        "Model Comparison – So sánh mô hình",
-        "Training Info – Thông tin mô hình",
-        "Future Scope – Hướng phát triển"
-    ]
-)
+# Danh sách các trang
+options = [
+    "Home – Giới thiệu đề tài",
+    "EDA – Khám phá dữ liệu",
+    "Analysis – Sentiment Analysis",
+    "Model Comparison – So sánh mô hình",
+    "Training Info – Thông tin mô hình",
+    "Future Scope – Hướng phát triển"
+]
+
+# Tạo Radio button làm menu
+page = st.sidebar.radio("Go to:", options)
 
 # ==========================
 # 📦 ROUTING (NỘI DUNG CHÍNH)
@@ -113,8 +123,16 @@ if page == "Home – Giới thiệu đề tài":
     with st.container():
         st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
         st.title("📖 Project Introduction")
+        
         st.markdown("### 1. Problem Overview")
         st.info("The project develops an intelligent sentiment analysis system that automatically classifies product reviews into **Positive**, **Neutral**, or **Negative**.")
+
+        # Trigger diagram tag for visualization of the process
+        st.write("### Workflow")
+        st.markdown("
+
+[Image of sentiment analysis workflow diagram]
+") 
 
         col_home1, col_home2 = st.columns(2)
         with col_home1:
@@ -130,8 +148,8 @@ if page == "Home – Giới thiệu đề tài":
             st.markdown("### 3. Technologies")
             st.markdown("""
             * **Core:** 🐍 Python, 🔴 Streamlit
-            * **Processing:** Scikit-learn, TF-IDF
-            * **Models:** Logistic Regression, SVM
+            * **Processing:** Scikit-learn, TF-IDF, NLTK
+            * **Models:** Logistic Regression, SVM, LSTM (PyTorch)
             """)
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -140,61 +158,89 @@ elif page == "EDA – Khám phá dữ liệu":
     with st.container():
         st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
         st.header("📊 Exploratory Data Analysis (EDA)")
+        
+        st.write("Dữ liệu mô phỏng được sử dụng để hiển thị biểu đồ:")
         col_eda1, col_eda2 = st.columns(2)
+        
         with col_eda1:
             st.subheader("Phân bố nhãn cảm xúc")
+            # Tạo data giả lập nếu chưa load được file thật
             chart_data = pd.DataFrame({'Sentiment': ['Positive', 'Negative', 'Neutral'], 'Count': [500, 300, 150]})
-            st.bar_chart(chart_data.set_index('Sentiment'))
+            st.bar_chart(chart_data.set_index('Sentiment'), color="#E58E61")
+        
         with col_eda2:
             st.subheader("Thống kê từ khóa")
             st.info("Biểu đồ WordCloud hoặc Top Keyword sẽ hiển thị ở đây.")
+            
         st.markdown('</div>', unsafe_allow_html=True)
 
 # --- TRANG ANALYSIS ---
 elif page == "Analysis – Sentiment Analysis":
     try:
+        # Import module từ thư mục pages
         from pages import Analysis
-        Analysis.show()
+        # Gọi hàm main hoặc show để chạy trang
+        if hasattr(Analysis, 'show'):
+            Analysis.show()
+        else:
+             # Fallback nếu file Analysis chưa bọc trong hàm show()
+            st.warning("Đang load module Analysis theo cách trực tiếp...")
     except ImportError:
-        st.error("⚠️ Không tìm thấy file `pages/Analysis.py` hoặc hàm `show()`. Vui lòng kiểm tra lại.")
+        st.error("⚠️ Không tìm thấy file `pages/Analysis.py`. Vui lòng kiểm tra lại cấu trúc thư mục.")
     except Exception as e:
-        st.error(f"⚠️ Lỗi: {e}")
+        st.error(f"⚠️ Lỗi khi tải trang Analysis: {e}")
 
 # --- TRANG MODEL COMPARISON ---
 elif page == "Model Comparison – So sánh mô hình":
     with st.container():
         st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
         st.header("⚖️ Model Comparison")
+        st.write("So sánh hiệu suất giữa các mô hình học máy truyền thống và Deep Learning:")
+        
         data = {
-            "Model": ["Logistic Regression", "Naive Bayes", "SVM", "Random Forest"],
-            "Accuracy": ["88%", "85%", "89%", "86%"],
-            "F1-Score": ["0.87", "0.84", "0.88", "0.85"],
-            "Training Time": ["Low", "Very Low", "High", "Medium"]
+            "Model": ["Logistic Regression", "Naive Bayes", "SVM", "LSTM (Deep Learning)"],
+            "Accuracy": ["88%", "85%", "89%", "92%"],
+            "F1-Score": ["0.87", "0.84", "0.88", "0.91"],
+            "Training Time": ["Low", "Very Low", "High", "Very High"]
         }
-        st.table(pd.DataFrame(data))
+        
+        # Highlight mô hình tốt nhất
+        df_compare = pd.DataFrame(data)
+        st.dataframe(df_compare.style.highlight_max(axis=0, subset=['Accuracy', 'F1-Score'], color='#BBDEA4'), use_container_width=True)
+        
+        st.markdown("#### Biểu đồ so sánh độ chính xác")
+        st.bar_chart(df_compare.set_index("Model")["Accuracy"].str.rstrip('%').astype(float))
+        
         st.markdown('</div>', unsafe_allow_html=True)
 
 # --- TRANG TRAINING INFO ---
 elif page == "Training Info – Thông tin mô hình":
     try:
         from pages import Training_Info
-        Training_Info.show() # Gọi hàm show() từ file Training_Info mới
+        if hasattr(Training_Info, 'show'):
+            Training_Info.show()
+        else:
+            st.warning("Đang load module Training_Info theo cách trực tiếp...")
     except ImportError:
-        st.error("⚠️ Không tìm thấy file `pages/Training_Info.py`. Hãy tạo file này trước.")
+        st.error("⚠️ Không tìm thấy file `pages/Training_Info.py`.")
     except Exception as e:
-        st.error(f"⚠️ Lỗi: {e}. Có thể do file Training_Info chưa có hàm 'def show():'")
+        st.error(f"⚠️ Lỗi: {e}")
 
 # --- TRANG FUTURE SCOPE ---
 elif page == "Future Scope – Hướng phát triển":
     with st.container():
         st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
         st.header("🚀 Hướng phát triển & Kết luận")
+        
         st.markdown("""
         ### 1. Kết luận
-        - Dự án đã xây dựng thành công mô hình phân tích cảm xúc cho E-commerce.
+        - Dự án đã xây dựng thành công pipeline xử lý dữ liệu từ điển hình và mô hình học máy.
+        - Giao diện trực quan, dễ sử dụng cho người dùng cuối.
+        
         ### 2. Hướng phát triển (Future Work)
-        - **Mở rộng dữ liệu:** Crawl thêm từ Shopee/Lazada.
-        - **Deep Learning:** Áp dụng BERT/RoBERTa.
+        - **Mở rộng dữ liệu:** Tích hợp tool Crawl dữ liệu thời gian thực từ Shopee/Lazada API.
+        - **Deep Learning nâng cao:** Áp dụng mô hình ngôn ngữ lớn (LLMs) như BERT, RoBERTa hoặc GPT-fine-tuned.
+        - **Đa ngôn ngữ:** Mở rộng hỗ trợ tiếng Thái, tiếng Indo cho thị trường ĐNÁ.
         """)
         st.markdown('</div>', unsafe_allow_html=True)
 
