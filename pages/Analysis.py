@@ -5,6 +5,25 @@ import sys
 import os
 import random
 
+ef show():
+    # ==================================================
+    # PASTE ALL YOUR ORIGINAL CODE FROM Analysis.py HERE
+    # ==================================================
+    
+    st.header("🔍 Sentiment Analysis Prediction")
+    
+    # Example content:
+    user_input = st.text_area("Enter product review:")
+    
+    if st.button("Predict"):
+        if user_input:
+            # Your prediction logic here
+            st.success("Prediction result goes here")
+        else:
+            st.warning("Please enter some text.")
+
+# Make sure this line is NOT here or is inside a name check if you run it standalone
+# show()  <-- DELETE THIS if it exists at the bottom indentation level
 # Import từ thư mục gốc
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from model_utils import load_model_resources, predict_debug, load_training_data_for_app
