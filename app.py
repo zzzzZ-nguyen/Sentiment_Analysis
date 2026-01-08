@@ -227,7 +227,7 @@ with col_footer:
                target="_blank"
                style="text-decoration:none; color:#1a73e8;">
                ORCID: 0000-0001-5174-3558
-            </a>c</h4>
+            </a></h4>
         </div>
         """,
         unsafe_allow_html=True
