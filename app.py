@@ -1,11 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import sys
-import os
-
-# Thêm đường dẫn hiện tại vào sys.path để import được các module trong pages/
-sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 # ==========================
 # ⚙️ CẤU HÌNH TRANG (Bắt buộc dòng đầu tiên)
@@ -47,28 +42,14 @@ css_style = """
     border-right: 3px solid #E58E61;
 }
 
-/* 4. TABLE STYLING */
-div[data-testid="stTable"], div[data-testid="stDataFrame"] {
-    background-color: #ffffff !important;
-    border-radius: 10px;
-    padding: 10px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+/* 4. Thẻ metric đẹp */
+div[data-testid="stMetric"] {
+    background-color: #ffffff;
+    padding: 15px;
+    border-radius: 8px;
+    border-left: 5px solid #E58E61;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
-
-div[data-testid="stTable"] th, div[data-testid="stDataFrame"] th {
-    background-color: #f8f9fa !important;
-    color: #333333 !important;
-    border-bottom: 2px solid #E58E61 !important;
-    font-weight: bold;
-}
-
-div[data-testid="stTable"] td, div[data-testid="stDataFrame"] td {
-    color: #333333 !important;
-    border-bottom: 1px solid #eee !important;
-}
-
-/* 5. Ẩn mặc định Sidebar Navigation của Streamlit */
-[data-testid="stSidebarNav"] {display: none;}
 </style>
 """
 st.markdown(css_style, unsafe_allow_html=True)
@@ -97,143 +78,36 @@ with col2:
 st.write("---")
 
 # ==========================
-# 📌 SIDEBAR – NAVIGATION
+# 🏠 NỘI DUNG TRANG CHỦ (HOME)
 # ==========================
-st.sidebar.markdown("## 🧭 Navigation")
+# Ở chế độ này, app.py chính là trang Home.
+# Các trang khác sẽ tự hiện trên Sidebar.
 
-options = [
-    "Home – Giới thiệu đề tài",
-    "EDA – Khám phá dữ liệu",
-    "Analysis – Sentiment Analysis",
-    "Model Comparison – So sánh mô hình",
-    "Training Info – Thông tin mô hình",
-    "Future Scope – Hướng phát triển"
-]
+with st.container():
+    st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
+    st.title("📖 Project Introduction")
+    
+    st.markdown("### 1. Problem Overview")
+    st.info("The project develops an intelligent sentiment analysis system that automatically classifies product reviews into **Positive**, **Neutral**, or **Negative**.")
 
-page = st.sidebar.radio("Go to:", options)
-
-# ==========================
-# 📦 ROUTING (NỘI DUNG CHÍNH)
-# ==========================
-
-# --- TRANG HOME ---
-if page == "Home – Giới thiệu đề tài":
-    with st.container():
-        st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
-        st.title("📖 Project Introduction")
-        
-        st.markdown("### 1. Problem Overview")
-        st.info("The project develops an intelligent sentiment analysis system that automatically classifies product reviews into **Positive**, **Neutral**, or **Negative**.")
-        
-        # Sửa lỗi: Dùng dấu ngoặc kép đơn giản cho chuỗi ngắn
-        st.write("### Workflow")
-        
-        col_home1, col_home2 = st.columns(2)
-        with col_home1:
-            st.markdown("### 2. Objectives")
-            # Dùng 3 dấu ngoặc kép cho chuỗi nhiều dòng
-            st.markdown("""
-            * ✅ **Analyze customer opinions** from product reviews.
-            * ✅ **Support Vietnamese and English** text.
-            * ✅ **Visualize sentiment distribution**.
-            * ✅ **Provide real-time sentiment prediction**.
-            """)
-
-        with col_home2:
-            st.markdown("### 3. Technologies")
-            st.markdown("""
-            * **Core:** 🐍 Python, 🔴 Streamlit
-            * **Processing:** Scikit-learn, TF-IDF, NLTK
-            * **Models:** Logistic Regression, SVM, LSTM (PyTorch)
-            """)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-# --- TRANG EDA ---
-elif page == "EDA – Khám phá dữ liệu":
-    with st.container():
-        st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
-        st.header("📊 Exploratory Data Analysis (EDA)")
-        
-        st.write("Dữ liệu mô phỏng được sử dụng để hiển thị biểu đồ:")
-        col_eda1, col_eda2 = st.columns(2)
-        
-        with col_eda1:
-            st.subheader("Phân bố nhãn cảm xúc")
-            chart_data = pd.DataFrame({'Sentiment': ['Positive', 'Negative', 'Neutral'], 'Count': [500, 300, 150]})
-            st.bar_chart(chart_data.set_index('Sentiment'), color="#E58E61")
-        
-        with col_eda2:
-            st.subheader("Thống kê từ khóa")
-            st.info("Biểu đồ WordCloud hoặc Top Keyword sẽ hiển thị ở đây.")
-            
-        st.markdown('</div>', unsafe_allow_html=True)
-
-# --- TRANG ANALYSIS ---
-elif page == "Analysis – Sentiment Analysis":
-    try:
-        from pages import Analysis
-        if hasattr(Analysis, 'show'):
-            Analysis.show()
-        else:
-            st.warning("Module Analysis đã load nhưng không tìm thấy hàm show().")
-    except ImportError:
-        st.error("⚠️ Không tìm thấy file `pages/Analysis.py`.")
-    except Exception as e:
-        st.error(f"⚠️ Lỗi khi tải trang Analysis: {e}")
-
-# --- TRANG MODEL COMPARISON ---
-elif page == "Model Comparison – So sánh mô hình":
-    with st.container():
-        st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
-        st.header("⚖️ Model Comparison")
-        st.write("So sánh hiệu suất giữa các mô hình:")
-        
-        data = {
-            "Model": ["Logistic Regression", "Naive Bayes", "SVM", "LSTM (Deep Learning)"],
-            "Accuracy": ["88%", "85%", "89%", "92%"],
-            "F1-Score": ["0.87", "0.84", "0.88", "0.91"],
-            "Training Time": ["Low", "Very Low", "High", "Very High"]
-        }
-        
-        df_compare = pd.DataFrame(data)
-        st.dataframe(df_compare.style.highlight_max(axis=0, subset=['Accuracy', 'F1-Score'], color='#BBDEA4'), use_container_width=True)
-        
-        st.markdown("#### Biểu đồ so sánh độ chính xác")
-        st.bar_chart(df_compare.set_index("Model")["Accuracy"].str.rstrip('%').astype(float))
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-
-# --- TRANG TRAINING INFO ---
-elif page == "Training Info – Thông tin mô hình":
-    try:
-        from pages import Training_Info
-        if hasattr(Training_Info, 'show'):
-            Training_Info.show()
-        else:
-            st.warning("Module Training_Info đã load nhưng không tìm thấy hàm show().")
-    except ImportError:
-        st.error("⚠️ Không tìm thấy file `pages/Training_Info.py`.")
-    except Exception as e:
-        st.error(f"⚠️ Lỗi: {e}")
-
-# --- TRANG FUTURE SCOPE ---
-elif page == "Future Scope – Hướng phát triển":
-    with st.container():
-        st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
-        st.header("🚀 Hướng phát triển & Kết luận")
-        
-        # Dùng 3 dấu ngoặc kép ở đây là bắt buộc vì nội dung dài nhiều dòng
+    col_home1, col_home2 = st.columns(2)
+    with col_home1:
+        st.markdown("### 2. Objectives")
         st.markdown("""
-        ### 1. Kết luận
-        - Dự án đã xây dựng thành công pipeline xử lý dữ liệu từ điển hình và mô hình học máy.
-        - Giao diện trực quan, dễ sử dụng cho người dùng cuối.
-        
-        ### 2. Hướng phát triển (Future Work)
-        - **Mở rộng dữ liệu:** Tích hợp tool Crawl dữ liệu thời gian thực từ Shopee/Lazada API.
-        - **Deep Learning nâng cao:** Áp dụng mô hình ngôn ngữ lớn (LLMs).
-        - **Đa ngôn ngữ:** Mở rộng hỗ trợ tiếng Thái, tiếng Indo.
+        * ✅ **Analyze customer opinions** from product reviews.
+        * ✅ **Support Vietnamese and English** text.
+        * ✅ **Visualize sentiment distribution**.
+        * ✅ **Provide real-time sentiment prediction**.
         """)
-        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col_home2:
+        st.markdown("### 3. Technologies")
+        st.markdown("""
+        * **Core:** 🐍 Python, 🔴 Streamlit
+        * **Processing:** Scikit-learn, TF-IDF, NLTK
+        * **Models:** Logistic Regression, SVM, LSTM (PyTorch)
+        """)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================
 # 👣 FOOTER
