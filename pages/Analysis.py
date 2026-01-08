@@ -3,24 +3,23 @@ import pandas as pd
 import numpy as np
 import sys
 import os
-import random
 
-# Import from root directory
+# --- IMPORT UTILS (Xử lý đường dẫn để tìm file model_utils.py ở thư mục gốc) ---
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-# Ensure model_utils exists in your root folder
+
 try:
     from model_utils import load_model_resources, predict_debug, load_training_data_for_app
 except ImportError:
-    # Fallback to prevent crash if utils are missing
+    # Hàm giả lập nếu không tìm thấy file utils (để tránh lỗi crash app)
     def load_model_resources(): return None, None
-    def predict_debug(t, v, m): return 0.5, [], []
+    def predict_debug(t, v, m): return 0.5, ["Error"], [0]
     def load_training_data_for_app(): return pd.DataFrame()
 
-# ==========================
-# 🟢 MAIN FUNCTION
-# ==========================
+# ==========================================
+# 👇 MAIN FUNCTION (Bắt buộc phải có hàm này)
+# ==========================================
 def show():
-    # --- CSS STYLING ---
+    # --- CSS STYLING (Chỉ áp dụng cho trang này) ---
     st.markdown("""
     <style>
         .stTextArea textarea { font-size: 16px; }
@@ -37,37 +36,37 @@ def show():
     st.title("🧠 Phân Tích Cảm Xúc Chuyên Sâu")
     st.write("Test model với dữ liệu nhập tay hoặc lấy ngẫu nhiên từ tập Training.")
 
-    # --- 1. LOAD RESOURCES ---
+    # --- 1. LOAD TÀI NGUYÊN ---
     vocab, model = load_model_resources()
 
+    # Khởi tạo Session State cho input text
     if 'input_text' not in st.session_state:
         st.session_state['input_text'] = ""
 
+    # Chia cột giao diện
     col_main, col_sidebar = st.columns([2, 1])
 
-    # --- 2. RIGHT COLUMN: DATA TOOLS ---
+    # --- 2. CỘT PHẢI: CÔNG CỤ DATA ---
     with col_sidebar:
         st.markdown("### 🎲 Dữ liệu mẫu")
-        st.info("Lấy ngẫu nhiên 1 câu trong dữ liệu `Training_Info` để kiểm tra độ học của máy.")
+        st.info("Lấy ngẫu nhiên 1 câu trong dữ liệu Training để test.")
         
         if st.button("🔄 Lấy mẫu ngẫu nhiên", use_container_width=True):
             df = load_training_data_for_app() 
             if not df.empty:
                 sample = df.sample(1).iloc[0]
                 st.session_state['input_text'] = sample['Content']
-                # Save original label for comparison
                 st.session_state['true_label'] = sample['Label'] 
                 st.toast(f"Đã lấy mẫu: {sample['Label']}", icon="✅")
             else:
-                st.error("Không tìm thấy dữ liệu trong folder `data/`")
+                st.error("Không tìm thấy dữ liệu mẫu.")
 
-        # Show original label if available
+        # Hiển thị nhãn gốc nếu có
         if 'true_label' in st.session_state and st.session_state['input_text']:
-            st.caption(f"🏷️ Nhãn gốc trong data: **{st.session_state['true_label']}**")
+            st.caption(f"🏷️ Nhãn gốc: **{st.session_state['true_label']}**")
 
-    # --- 3. LEFT COLUMN: ANALYSIS ---
+    # --- 3. CỘT TRÁI: PHÂN TÍCH ---
     with col_main:
-        # Text Area gets value from Session State
         user_input = st.text_area("Nhập nội dung review:", 
                                   value=st.session_state['input_text'], 
                                   height=150,
@@ -75,19 +74,19 @@ def show():
         
         if st.button("🚀 Bắt đầu Phân tích", type="primary", use_container_width=True):
             if not model:
-                st.error("⚠️ Chưa có Model! Vui lòng qua trang **Train PyTorch** huấn luyện trước.")
+                st.error("⚠️ Chưa có Model! Vui lòng chạy file `train_pytorch.py` trước.")
             elif not user_input.strip():
                 st.warning("Vui lòng nhập nội dung.")
             else:
-                # --- PREDICTION LOGIC ---
+                # --- GỌI HÀM DỰ ĐOÁN ---
                 score, words, tokens = predict_debug(user_input, vocab, model)
                 
-                # --- DISPLAY RESULTS ---
+                # --- HIỂN THỊ KẾT QUẢ ---
                 st.divider()
                 c1, c2 = st.columns([1, 2])
                 
                 with c1:
-                    st.markdown("#### Kết quả dự đoán:")
+                    st.markdown("#### Kết quả:")
                     if score >= 0.6:
                         st.markdown(f'<div class="result-box pos">TÍCH CỰC<br>{score:.2%}</div>', unsafe_allow_html=True)
                     elif score <= 0.4:
@@ -98,29 +97,17 @@ def show():
                 with c2:
                     st.markdown("#### Độ tin cậy:")
                     st.progress(score)
-                    if score > 0.5:
-                        st.caption("Máy nghiêng về phía Tích cực.")
-                    else:
-                        st.caption("Máy nghiêng về phía Tiêu cực.")
 
-                # --- DEBUG INFO ---
-                with st.expander("🔍 Soi kính lúp (Tại sao máy đoán vậy?)", expanded=True):
-                    st.write("**1. Máy đọc (Tokenization):**")
-                    
-                    # Create HTML to highlight unknown words
+                # --- CHI TIẾT TOKEN ---
+                with st.expander("🔍 Chi tiết Tokenization (Máy đọc thế nào?)", expanded=True):
                     html_tokens = []
                     unk_count = 0
                     for w, idx in zip(words, tokens):
-                        if idx == 0: # 0 is UNK (Unknown)
-                            html_tokens.append(f'<span style="background-color:#ffcccc; padding:2px; border-radius:3px; color:red" title="Từ lạ (Không có trong Training)">{w} (?)</span>')
+                        if idx == 0: # 0 là UNK (Unknown)
+                            html_tokens.append(f'<span style="background-color:#ffcccc; color:red; padding:2px; border-radius:3px;">{w} (?)</span>')
                             unk_count += 1
                         else:
                             html_tokens.append(f'<span style="background-color:#e6ffe6; padding:2px; border-radius:3px;">{w}</span>')
                     
                     st.markdown(" ".join(html_tokens), unsafe_allow_html=True)
-                    
-                    st.write("---")
-                    st.write(f"**Thống kê:** Tổng {len(words)} từ. Có **{unk_count}** từ lạ (UNK).")
-                    if unk_count > len(words) * 0.3:
-                        st.warning("⚠️ **Cảnh báo:** Câu này chứa nhiều từ mà máy chưa từng học. Kết quả có thể không chính xác.")
-                        st.info("💡 **Gợi ý:** Hãy thêm các từ này vào dữ liệu Train và huấn luyện lại.")
+                    st.caption(f"UNK count: {unk_count} (Từ vựng máy chưa học).")
