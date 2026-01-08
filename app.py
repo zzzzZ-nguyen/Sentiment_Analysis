@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import importlib # Thêm thư viện này để reload module
 
 # ==========================
 # ⚙️ CẤU HÌNH TRANG (Bắt buộc dòng đầu tiên)
@@ -50,20 +51,6 @@ div[data-testid="stTable"], div[data-testid="stDataFrame"] {
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
 
-/* Header của bảng */
-div[data-testid="stTable"] th, div[data-testid="stDataFrame"] th {
-    background-color: #f8f9fa !important;
-    color: #333333 !important;
-    border-bottom: 2px solid #E58E61 !important;
-    font-weight: bold;
-}
-
-/* Dữ liệu trong bảng */
-div[data-testid="stTable"] td, div[data-testid="stDataFrame"] td {
-    color: #333333 !important;
-    border-bottom: 1px solid #eee !important;
-    background-image: repeating-linear-gradient(45deg, #F0EBD6, #F0EBD6 20px, #BBDEA4 20px, #BBDEA4 40px);
-}
 h1, h2, h3 { color: #A20409 !important; }
 </style>
 """
@@ -97,7 +84,6 @@ st.write("---")
 # ==========================
 st.sidebar.markdown("## 🧭 Navigation")
 
-# Unified Navigation Options
 page = st.sidebar.radio(
     "Go to:",
     [
@@ -119,30 +105,7 @@ if page == "Home – Giới thiệu đề tài":
     with st.container():
         st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
         st.title("📖 Project Introduction")
-        
-        st.markdown("### 1. Problem Overview")
         st.info("The project develops an intelligent sentiment analysis system that automatically classifies product reviews into **Positive**, **Neutral**, or **Negative** using LSTM & Machine Learning.")
-
-        col_home1, col_home2 = st.columns(2)
-        with col_home1:
-            st.markdown("### 2. Objectives")
-            st.markdown("""
-            * ✅ **Analyze customer opinions** from product reviews.
-            * ✅ **Support Vietnamese and English** text.
-            * ✅ **Visualize sentiment distribution**.
-            * ✅ **Provide real-time sentiment prediction**.
-            """)
-
-        with col_home2:
-            st.markdown("### 3. Technologies")
-            st.markdown("""
-            * **Core:** 🐍 Python, 🔴 Streamlit
-            * **Processing:** Scikit-learn, TF-IDF
-            * **Models:** Logistic Regression, SVM, LSTM (PyTorch)
-            """)
-            
-        # Example diagram trigger if needed: 
-        st.image("https://miro.medium.com/v2/resize:fit:1400/1*p3_wO5j2h7jQ6bC-uP4u2A.png", caption="Sentiment Analysis Workflow", use_column_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
 # --- TRANG EDA ---
@@ -150,59 +113,49 @@ elif page == "EDA – Khám phá dữ liệu":
     with st.container():
         st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
         st.header("📊 Exploratory Data Analysis (EDA)")
-        st.markdown("Phân tích sơ bộ về tập dữ liệu đánh giá sản phẩm.")
-        
-        col_eda1, col_eda2 = st.columns(2)
-        with col_eda1:
-            st.subheader("Phân bố nhãn cảm xúc")
-            # Fake data for demo
-            chart_data = pd.DataFrame({'Sentiment': ['Positive', 'Negative', 'Neutral'], 'Count': [500, 300, 150]})
-            st.bar_chart(chart_data.set_index('Sentiment'))
-        
-        with col_eda2:
-            st.subheader("Thống kê từ khóa")
-            st.info("Biểu đồ WordCloud hoặc Top Keyword sẽ hiển thị ở đây.")
+        st.write("Nội dung EDA sẽ hiển thị ở đây.")
         st.markdown('</div>', unsafe_allow_html=True)
 
-# --- TRANG ANALYSIS ---
+# --- TRANG ANALYSIS (ĐÃ SỬA LỖI MÀN HÌNH TRẮNG) ---
 elif page == "Analysis – Sentiment Analysis":
     try:
-        from pages import Analysis
-        Analysis.show()
+        import pages.Analysis
+        # Bắt buộc reload để cập nhật code mới nhất từ file Analysis.py
+        importlib.reload(pages.Analysis)
+        
+        # Gọi hàm show()
+        pages.Analysis.show()
+        
     except ImportError:
-        st.warning("⚠️ File `pages/Analysis.py` not found. Showing placeholder.")
-        st.info("Analysis functionality (Prediction) will appear here.")
+        st.warning("⚠️ File `pages/Analysis.py` not found.")
+    except AttributeError as e:
+        st.error(f"⚠️ Lỗi cấu trúc code: {e}")
+        st.info("Hãy chắc chắn file `pages/Analysis.py` đã có hàm `def show():`")
+    except Exception as e:
+        st.error(f"⚠️ Lỗi không xác định: {e}")
 
 # --- TRANG TRAIN PYTORCH ---
 elif page == "Train PyTorch – Huấn luyện Model":
     try:
         from pages import train_pytorch
         train_pytorch.show()
-    except ImportError:
-        st.error("⚠️ Không tìm thấy file `pages/train_pytorch.py`.")
+    except Exception as e:
+        st.info(f"Đang phát triển module Train: {e}")
 
 # --- TRANG TRAINING INFO ---
 elif page == "Training Info – Thông tin mô hình":
     try:
         from pages import Training_Info
         Training_Info.show()
-    except ImportError:
-        st.error("⚠️ Không tìm thấy file `pages/Training_Info.py`.")
+    except Exception as e:
+        st.info(f"Đang phát triển module Info: {e}")
 
 # --- TRANG FUTURE SCOPE ---
 elif page == "Future Scope – Hướng phát triển":
     with st.container():
         st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
         st.header("🚀 Hướng phát triển & Kết luận")
-        st.markdown("""
-        ### 1. Kết luận
-        - Dự án đã xây dựng thành công mô hình phân tích cảm xúc cho E-commerce.
-        - Tích hợp Deep Learning (LSTM) cho độ chính xác cao.
-
-        ### 2. Hướng phát triển (Future Work)
-        - **Mở rộng dữ liệu:** Crawl thêm từ Shopee/Lazada.
-        - **Model:** Áp dụng BERT/RoBERTa (PhoBERT) để xử lý tiếng Việt tốt hơn.
-        """)
+        st.write("Nội dung kết luận.")
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================
@@ -221,21 +174,6 @@ with col_footer:
                 <b>2. Huynh Ngoc Minh Quan</b> - 235052863
             </div>
         </div>
-        <div style="margin-top: 15px; background: #9BBA74; border-radius: 12px; padding: 15px 20px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-             <h4 style="color:white; margin:0;">👨‍🏫 Instructor:<b>Bùi Tiến Đức</b> –
-            <a href="https://orcid.org/0000-0001-5174-3558"
-               target="_blank"
-               style="text-decoration:none; color:#1a73e8;">
-               ORCID: 0000-0001-5174-3558
-            </a></h4>
-        </div>
         """,
         unsafe_allow_html=True
     )
-
-st.markdown(
-    """<div style="text-align:center; margin-top:20px; padding:10px; font-size:13px; color:#A20409; font-weight:bold; background-color: rgba(255,255,255,0.8); border-radius: 20px;">
-        © 2025 – Topic 5: Sentiment Analysis for E-Commerce
-    </div>""",
-    unsafe_allow_html=True
-)
