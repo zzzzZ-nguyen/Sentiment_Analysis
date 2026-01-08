@@ -67,7 +67,7 @@ div[data-testid="stTable"] td, div[data-testid="stDataFrame"] td {
     border-bottom: 1px solid #eee !important;
 }
 
-/* 5. Ẩn mặc định Sidebar Navigation của Streamlit (để dùng Custom Nav) */
+/* 5. Ẩn mặc định Sidebar Navigation của Streamlit */
 [data-testid="stSidebarNav"] {display: none;}
 </style>
 """
@@ -101,7 +101,6 @@ st.write("---")
 # ==========================
 st.sidebar.markdown("## 🧭 Navigation")
 
-# Danh sách các trang
 options = [
     "Home – Giới thiệu đề tài",
     "EDA – Khám phá dữ liệu",
@@ -111,7 +110,6 @@ options = [
     "Future Scope – Hướng phát triển"
 ]
 
-# Tạo Radio button làm menu
 page = st.sidebar.radio("Go to:", options)
 
 # ==========================
@@ -126,17 +124,14 @@ if page == "Home – Giới thiệu đề tài":
         
         st.markdown("### 1. Problem Overview")
         st.info("The project develops an intelligent sentiment analysis system that automatically classifies product reviews into **Positive**, **Neutral**, or **Negative**.")
-
-        # Trigger diagram tag for visualization of the process
+        
+        # Sửa lỗi: Dùng dấu ngoặc kép đơn giản cho chuỗi ngắn
         st.write("### Workflow")
-        st.markdown("
-
-[Image of sentiment analysis workflow diagram]
-") 
-
+        
         col_home1, col_home2 = st.columns(2)
         with col_home1:
             st.markdown("### 2. Objectives")
+            # Dùng 3 dấu ngoặc kép cho chuỗi nhiều dòng
             st.markdown("""
             * ✅ **Analyze customer opinions** from product reviews.
             * ✅ **Support Vietnamese and English** text.
@@ -164,7 +159,6 @@ elif page == "EDA – Khám phá dữ liệu":
         
         with col_eda1:
             st.subheader("Phân bố nhãn cảm xúc")
-            # Tạo data giả lập nếu chưa load được file thật
             chart_data = pd.DataFrame({'Sentiment': ['Positive', 'Negative', 'Neutral'], 'Count': [500, 300, 150]})
             st.bar_chart(chart_data.set_index('Sentiment'), color="#E58E61")
         
@@ -177,16 +171,13 @@ elif page == "EDA – Khám phá dữ liệu":
 # --- TRANG ANALYSIS ---
 elif page == "Analysis – Sentiment Analysis":
     try:
-        # Import module từ thư mục pages
         from pages import Analysis
-        # Gọi hàm main hoặc show để chạy trang
         if hasattr(Analysis, 'show'):
             Analysis.show()
         else:
-             # Fallback nếu file Analysis chưa bọc trong hàm show()
-            st.warning("Đang load module Analysis theo cách trực tiếp...")
+            st.warning("Module Analysis đã load nhưng không tìm thấy hàm show().")
     except ImportError:
-        st.error("⚠️ Không tìm thấy file `pages/Analysis.py`. Vui lòng kiểm tra lại cấu trúc thư mục.")
+        st.error("⚠️ Không tìm thấy file `pages/Analysis.py`.")
     except Exception as e:
         st.error(f"⚠️ Lỗi khi tải trang Analysis: {e}")
 
@@ -195,7 +186,7 @@ elif page == "Model Comparison – So sánh mô hình":
     with st.container():
         st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
         st.header("⚖️ Model Comparison")
-        st.write("So sánh hiệu suất giữa các mô hình học máy truyền thống và Deep Learning:")
+        st.write("So sánh hiệu suất giữa các mô hình:")
         
         data = {
             "Model": ["Logistic Regression", "Naive Bayes", "SVM", "LSTM (Deep Learning)"],
@@ -204,7 +195,6 @@ elif page == "Model Comparison – So sánh mô hình":
             "Training Time": ["Low", "Very Low", "High", "Very High"]
         }
         
-        # Highlight mô hình tốt nhất
         df_compare = pd.DataFrame(data)
         st.dataframe(df_compare.style.highlight_max(axis=0, subset=['Accuracy', 'F1-Score'], color='#BBDEA4'), use_container_width=True)
         
@@ -220,7 +210,7 @@ elif page == "Training Info – Thông tin mô hình":
         if hasattr(Training_Info, 'show'):
             Training_Info.show()
         else:
-            st.warning("Đang load module Training_Info theo cách trực tiếp...")
+            st.warning("Module Training_Info đã load nhưng không tìm thấy hàm show().")
     except ImportError:
         st.error("⚠️ Không tìm thấy file `pages/Training_Info.py`.")
     except Exception as e:
@@ -232,6 +222,7 @@ elif page == "Future Scope – Hướng phát triển":
         st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
         st.header("🚀 Hướng phát triển & Kết luận")
         
+        # Dùng 3 dấu ngoặc kép ở đây là bắt buộc vì nội dung dài nhiều dòng
         st.markdown("""
         ### 1. Kết luận
         - Dự án đã xây dựng thành công pipeline xử lý dữ liệu từ điển hình và mô hình học máy.
@@ -239,8 +230,8 @@ elif page == "Future Scope – Hướng phát triển":
         
         ### 2. Hướng phát triển (Future Work)
         - **Mở rộng dữ liệu:** Tích hợp tool Crawl dữ liệu thời gian thực từ Shopee/Lazada API.
-        - **Deep Learning nâng cao:** Áp dụng mô hình ngôn ngữ lớn (LLMs) như BERT, RoBERTa hoặc GPT-fine-tuned.
-        - **Đa ngôn ngữ:** Mở rộng hỗ trợ tiếng Thái, tiếng Indo cho thị trường ĐNÁ.
+        - **Deep Learning nâng cao:** Áp dụng mô hình ngôn ngữ lớn (LLMs).
+        - **Đa ngôn ngữ:** Mở rộng hỗ trợ tiếng Thái, tiếng Indo.
         """)
         st.markdown('</div>', unsafe_allow_html=True)
 
