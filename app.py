@@ -1,7 +1,8 @@
+import streamlit as st
+import pandas as pd
 import numpy as np
 
 # ==========================
-# ⚙️ CẤU HÌNH TRANG (DUY NHẤT TẠI ĐÂY)
 # ⚙️ CẤU HÌNH TRANG (Bắt buộc dòng đầu tiên)
 # ==========================
 st.set_page_config(
@@ -9,12 +10,10 @@ st.set_page_config(
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
-    layout="wide"
 )
 
 # ==========================
 # 🎨 CSS STYLING
-# 🎨 CSS STYLING (Giữ nguyên của bạn)
 # ==========================
 css_style = """
 <style>
@@ -65,9 +64,6 @@ div[data-testid="stTable"] td, div[data-testid="stDataFrame"] td {
     border-bottom: 1px solid #eee !important;
     background-image: repeating-linear-gradient(45deg, #F0EBD6, #F0EBD6 20px, #BBDEA4 20px, #BBDEA4 40px);
 }
-[data-testid="stHeader"] { background-color: rgba(255,255,255,0.6); backdrop-filter: blur(5px); }
-[data-testid="stSidebar"] { background-color: #ffffff; border-right: 3px solid #E58E61; }
-div[data-testid="stTable"], div[data-testid="stDataFrame"] { background-color: #ffffff !important; padding: 10px; border-radius: 10px; }
 h1, h2, h3 { color: #A20409 !important; }
 </style>
 """
@@ -75,14 +71,12 @@ st.markdown(css_style, unsafe_allow_html=True)
 
 # ==========================
 # 🎨 HEADER
-# 🎨 HEADER & SIDEBAR
 # ==========================
 col1, col2 = st.columns([1, 9])
 
 with col1:
     st.image("https://cdn-icons-png.flaticon.com/512/263/263142.png", width=70)
 
-with col1: st.image("https://cdn-icons-png.flaticon.com/512/263/263142.png", width=70)
 with col2:
     st.markdown(
         """
@@ -96,10 +90,6 @@ with col2:
         unsafe_allow_html=True
     )
 
-    st.markdown("""
-        <h2 style="color:#A20409; margin-bottom:0;">Topic 5: Developing a Sentiment Analysis Application</h2>
-        <h4 style="color:#E58E61;">Supporting E-Commerce Business Decision Making</h4>
-        """, unsafe_allow_html=True)
 st.write("---")
 
 # ==========================
@@ -107,28 +97,21 @@ st.write("---")
 # ==========================
 st.sidebar.markdown("## 🧭 Navigation")
 
+# Unified Navigation Options
 page = st.sidebar.radio(
     "Go to:",
     [
         "Home – Giới thiệu đề tài",
         "EDA – Khám phá dữ liệu",
         "Analysis – Sentiment Analysis",
-        "Model Comparison – So sánh mô hình",
+        "Train PyTorch – Huấn luyện Model",
         "Training Info – Thông tin mô hình",
         "Future Scope – Hướng phát triển"
     ]
 )
-page = st.sidebar.radio("Go to:", [
-    "Home – Giới thiệu đề tài",
-    "Training Info – Thông tin mô hình",  # <--- Mới
-    "Train PyTorch – Huấn luyện Model",   # <--- Mới
-    "Analysis – Sentiment Analysis",
-    "Future Scope – Hướng phát triển"
-])
 
 # ==========================
 # 📦 ROUTING (ĐIỀU HƯỚNG NỘI DUNG)
-# 📦 ROUTING (ĐIỀU HƯỚNG)
 # ==========================
 
 # --- TRANG HOME ---
@@ -138,11 +121,7 @@ if page == "Home – Giới thiệu đề tài":
         st.title("📖 Project Introduction")
         
         st.markdown("### 1. Problem Overview")
-        st.info("The project develops an intelligent sentiment analysis system that automatically classifies product reviews into **Positive**, **Neutral**, or **Negative**.")
-    st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
-    st.title("📖 Project Introduction")
-    st.info("The project develops an intelligent sentiment analysis system using LSTM & Machine Learning.")
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.info("The project develops an intelligent sentiment analysis system that automatically classifies product reviews into **Positive**, **Neutral**, or **Negative** using LSTM & Machine Learning.")
 
         col_home1, col_home2 = st.columns(2)
         with col_home1:
@@ -162,6 +141,7 @@ if page == "Home – Giới thiệu đề tài":
             * **Models:** Logistic Regression, SVM, LSTM (PyTorch)
             """)
             
+        # Example diagram trigger if needed: 
         st.image("https://miro.medium.com/v2/resize:fit:1400/1*p3_wO5j2h7jQ6bC-uP4u2A.png", caption="Sentiment Analysis Workflow", use_column_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -175,6 +155,7 @@ elif page == "EDA – Khám phá dữ liệu":
         col_eda1, col_eda2 = st.columns(2)
         with col_eda1:
             st.subheader("Phân bố nhãn cảm xúc")
+            # Fake data for demo
             chart_data = pd.DataFrame({'Sentiment': ['Positive', 'Negative', 'Neutral'], 'Count': [500, 300, 150]})
             st.bar_chart(chart_data.set_index('Sentiment'))
         
@@ -183,49 +164,30 @@ elif page == "EDA – Khám phá dữ liệu":
             st.info("Biểu đồ WordCloud hoặc Top Keyword sẽ hiển thị ở đây.")
         st.markdown('</div>', unsafe_allow_html=True)
 
-# --- TRANG ANALYSIS (GỌI FILE ANALYSIS.PY) ---
+# --- TRANG ANALYSIS ---
 elif page == "Analysis – Sentiment Analysis":
-# --- GỌI FILE TRAINING INFO ---
-elif page == "Training Info – Thông tin mô hình":
     try:
         from pages import Analysis
-        Analysis.show()  # Gọi hàm show() trong file Analysis.py
+        Analysis.show()
     except ImportError:
-        st.error("⚠️ Không tìm thấy file `pages/Analysis.py` hoặc hàm `show()`. Vui lòng kiểm tra lại.")
-        from pages import Training_Info
-        Training_Info.show()  # Gọi hàm show()
-    except Exception as e:
-        st.error(f"⚠️ Lỗi khi chạy Analysis: {e}")
+        st.warning("⚠️ File `pages/Analysis.py` not found. Showing placeholder.")
+        st.info("Analysis functionality (Prediction) will appear here.")
 
-# --- TRANG MODEL COMPARISON ---
-elif page == "Model Comparison – So sánh mô hình":
-    with st.container():
-        st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px; border-radius:15px;">', unsafe_allow_html=True)
-        st.header("⚖️ Model Comparison")
-        data = {
-            "Model": ["Logistic Regression", "Naive Bayes", "SVM", "LSTM (PyTorch)"],
-            "Accuracy": ["88%", "85%", "89%", "92%"],
-            "F1-Score": ["0.87", "0.84", "0.88", "0.91"],
-            "Training Time": ["Low", "Very Low", "High", "High"]
-        }
-        st.table(pd.DataFrame(data))
-        st.markdown('</div>', unsafe_allow_html=True)
-        st.error(f"⚠️ Lỗi: {e}. Hãy kiểm tra file `pages/Training_Info.py`")
-
-# --- TRANG TRAINING INFO (GỌI FILE TRAINING_INFO.PY) ---
-elif page == "Training Info – Thông tin mô hình":
-# --- GỌI FILE TRAIN PYTORCH ---
+# --- TRANG TRAIN PYTORCH ---
 elif page == "Train PyTorch – Huấn luyện Model":
     try:
-        from pages import Training_Info
-        Training_Info.show() # Gọi hàm show() trong file Training_Info.py
-    except ImportError:
-        st.error("⚠️ Không tìm thấy file `pages/Training_Info.py` hoặc hàm `show()`. Vui lòng kiểm tra lại.")
         from pages import train_pytorch
-        train_pytorch.show()  # Gọi hàm show()
-    except Exception as e:
-        st.error(f"⚠️ Lỗi khi chạy Training Info: {e}")
-        st.error(f"⚠️ Lỗi: {e}. Hãy kiểm tra file `pages/train_pytorch.py`")
+        train_pytorch.show()
+    except ImportError:
+        st.error("⚠️ Không tìm thấy file `pages/train_pytorch.py`.")
+
+# --- TRANG TRAINING INFO ---
+elif page == "Training Info – Thông tin mô hình":
+    try:
+        from pages import Training_Info
+        Training_Info.show()
+    except ImportError:
+        st.error("⚠️ Không tìm thấy file `pages/Training_Info.py`.")
 
 # --- TRANG FUTURE SCOPE ---
 elif page == "Future Scope – Hướng phát triển":
@@ -236,22 +198,16 @@ elif page == "Future Scope – Hướng phát triển":
         ### 1. Kết luận
         - Dự án đã xây dựng thành công mô hình phân tích cảm xúc cho E-commerce.
         - Tích hợp Deep Learning (LSTM) cho độ chính xác cao.
-# --- CÁC TRANG KHÁC ---
-elif page == "Analysis – Sentiment Analysis":
-    st.info("Chức năng dự đoán đang được cập nhật...")
 
         ### 2. Hướng phát triển (Future Work)
         - **Mở rộng dữ liệu:** Crawl thêm từ Shopee/Lazada.
         - **Model:** Áp dụng BERT/RoBERTa (PhoBERT) để xử lý tiếng Việt tốt hơn.
         """)
         st.markdown('</div>', unsafe_allow_html=True)
-elif page == "Future Scope – Hướng phát triển":
-    st.markdown('<div style="background-color:rgba(255,255,255,0.9); padding:20px;"><h3>🚀 Hướng phát triển</h3></div>', unsafe_allow_html=True)
 
 # ==========================
 # 👣 FOOTER
 # ==========================
-# Footer
 st.markdown("---")
 _, col_footer, _ = st.columns([1, 8, 1])
 
