@@ -6,25 +6,21 @@ import numpy as np
 import pandas as pd
 import re
 
-# --- CẤU HÌNH ---
+# --- 1. CẤU HÌNH MODEL ---
 EMBEDDING_DIM = 400
 HIDDEN_DIM = 256
 N_LAYERS = 2
 
-# 1. HÀM CHUẨN HÓA VĂN BẢN (QUAN TRỌNG NHẤT)
+# --- 2. HÀM CHUẨN HÓA TEXT (QUAN TRỌNG) ---
 def clean_text(text):
-    """Hàm xử lý văn bản dùng chung cho cả Train và Predict"""
-    if not isinstance(text, str):
-        return []
-    # 1. Chuyển về chữ thường
+    """Làm sạch văn bản đồng bộ cho cả Train và Test"""
+    if not isinstance(text, str): return []
     text = text.lower()
-    # 2. Loại bỏ ký tự đặc biệt, giữ lại chữ cái và số tiếng Việt
+    # Giữ lại chữ cái, số và dấu cách
     text = re.sub(r'[^\w\s]', ' ', text)
-    # 3. Tách từ đơn giản (Split space)
-    words = text.split()
-    return words
+    return text.split()
 
-# 2. MODEL LSTM
+# --- 3. CLASS MODEL LSTM ---
 class SentimentLSTM(nn.Module):
     def __init__(self, vocab_size, embed_dim, hidden_dim, output_dim, n_layers, drop_prob=0.5):
         super(SentimentLSTM, self).__init__()
@@ -56,7 +52,7 @@ class SentimentLSTM(nn.Module):
                   weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().to(device))
         return hidden
 
-# 3. LOAD RESOURCE
+# --- 4. HÀM LOAD MODEL & DỮ LIỆU (MỚI) ---
 def load_model_resources():
     vocab_path = "models/vocab.pkl"
     model_path = "models/sentiment_model.pth"
@@ -76,17 +72,54 @@ def load_model_resources():
         except: model = None
     return vocab, model
 
-# 4. PREDICT (CÓ TRẢ VỀ DEBUG INFO)
-def predict(text, vocab, model):
+def load_training_data_for_app():
+    """Đọc dữ liệu Training (TXT hoặc CSV) để dùng chung"""
+    data_dir = "data"
+    all_data = []
+    
+    # Ưu tiên 1: Đọc các file TXT chuẩn (như trong Training_Info)
+    train_files = {
+        "Negative": "train_negative_tokenized.txt",
+        "Neutral": "train_neutral_tokenized.txt",
+        "Positive": "train_positive_tokenized.txt"
+    }
+    
+    found_txt = False
+    if os.path.exists(data_dir):
+        for label, filename in train_files.items():
+            path = os.path.join(data_dir, filename)
+            if os.path.exists(path):
+                found_txt = True
+                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                    lines = f.readlines()
+                    for line in lines:
+                        if line.strip():
+                            all_data.append({"Content": line.strip(), "Label": label})
+    
+    # Ưu tiên 2: Nếu không có TXT, tìm file CSV/Excel bất kỳ
+    if not found_txt and os.path.exists(data_dir):
+        files = [f for f in os.listdir(data_dir) if f.endswith(('.csv', '.xlsx'))]
+        for f in files:
+            try:
+                path = os.path.join(data_dir, f)
+                df = pd.read_csv(path) if f.endswith('.csv') else pd.read_excel(path)
+                # Tìm cột text
+                text_cols = [c for c in df.columns if df[c].dtype == object]
+                if text_cols:
+                    col_name = text_cols[0] # Lấy cột đầu tiên
+                    for val in df[col_name].dropna():
+                        all_data.append({"Content": str(val), "Label": "Unknown"})
+            except: pass
+
+    return pd.DataFrame(all_data)
+
+# --- 5. HÀM DỰ ĐOÁN (TRẢ VỀ CHI TIẾT) ---
+def predict_debug(text, vocab, model):
     if not vocab or not model: return 0.5, [], []
     
-    # Dùng hàm clean_text chuẩn
     words = clean_text(text)
-    
-    # Map sang số
     review_int = [vocab.get(w, 0) for w in words]
     
-    # Padding
     seq_len = 50
     if len(review_int) < seq_len:
         features = list(np.zeros(seq_len - len(review_int), dtype=int)) + review_int
@@ -102,15 +135,3 @@ def predict(text, vocab, model):
         pred = output.item()
         
     return pred, words, review_int
-
-# 5. DATA UTILS
-def get_data_files():
-    data_path = "data"
-    if not os.path.exists(data_path): return []
-    return [f for f in os.listdir(data_path) if f.endswith(('.csv', '.xlsx', '.xls'))]
-
-def load_dataset(filename):
-    path = os.path.join("data", filename)
-    try:
-        return pd.read_csv(path) if filename.endswith('.csv') else pd.read_excel(path)
-    except: return None
