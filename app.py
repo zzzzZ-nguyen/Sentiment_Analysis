@@ -222,7 +222,12 @@ with col_footer:
             </div>
         </div>
         <div style="margin-top: 15px; background: #9BBA74; border-radius: 12px; padding: 15px 20px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-             <h4 style="color:white; margin:0;">👨‍🏫 Instructor: Bùi Tiến Đức</h4>
+             <h4 style="color:white; margin:0;">👨‍🏫 Instructor:<b>Bùi Tiến Đức</b> –
+            <a href="https://orcid.org/0000-0001-5174-3558"
+               target="_blank"
+               style="text-decoration:none; color:#1a73e8;">
+               ORCID: 0000-0001-5174-3558
+            </a>c</h4>
         </div>
         """,
         unsafe_allow_html=True
